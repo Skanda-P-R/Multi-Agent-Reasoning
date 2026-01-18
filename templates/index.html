@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Multi-Agent Reasoning</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <h2>Multi-Agent Reasoning System</h2>
+
+        <div class="input-box">
+            <textarea id="question" placeholder="Enter your question..."></textarea>
+            <button id="submit-btn" onclick="start()" disabled>Submit</button>
+        </div>
+
+        <div class="nav-container">
+            <button class="nav-btn" onclick="prevRound()" aria-label="Previous round">
+                ‹
+            </button>
+
+            <span id="round-label">Round 1</span>
+
+            <button class="nav-btn" onclick="nextRound()" aria-label="Next round">
+                ›
+            </button>
+        </div>
+
+        <div class="output">
+            <div class="row">
+                <div id="agentA" class="box"></div>
+                <div id="agentB" class="box"></div>
+            </div>
+            <div class="row">
+                <div id="judge" class="box full"></div>
+            </div>
+        </div>
+
+        <div id="final" class="final-box hidden"></div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
