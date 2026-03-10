@@ -2,45 +2,77 @@
 <html>
 
 <head>
-    <title>Multi-Agent Reasoning</title>
+    <title>DPR Multi-Agent Reasoning</title>
+
     <link rel="stylesheet" href="/static/style.css">
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 
 <body>
-    <div class="app-container">
-        <h2>Multi-Agent Reasoning System</h2>
+    <!DOCTYPE html>
 
-        <div class="input-box">
-            <textarea id="question" placeholder="Enter your question..."></textarea>
-            <button id="submit-btn" onclick="start()" disabled>Submit</button>
-        </div>
+    <html>
 
-        <div class="nav-container">
-            <button class="nav-btn" onclick="prevRound()" aria-label="Previous round">
-                ‹
-            </button>
+    <head>
 
-            <span id="round-label">Round 1</span>
+        <title>DPR Multi-Agent Console</title>
 
-            <button class="nav-btn" onclick="nextRound()" aria-label="Next round">
-                ›
-            </button>
-        </div>
+        <link rel="stylesheet" href="/static/style.css">
 
-        <div class="output">
-            <div class="row">
-                <div id="agentA" class="box"></div>
-                <div id="agentB" class="box"></div>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    </head>
+
+    <body>
+
+        <div class="app">
+
+            <div class="header">
+                Distributed Protocol for Reasoning
             </div>
-            <div class="row">
-                <div id="judge" class="box full"></div>
+
+
+            <div id="chat" class="chat"></div>
+
+
+
+            <div class="control-panel">
+
+                <button onclick="pause()">Pause</button>
+                <button onclick="resume()">Resume</button>
+                <button onclick="showInject()">Inject</button>
+
             </div>
+
+
+
+            <div id="command-box" class="command-box hidden">
+
+                <input id="command-input" placeholder="Enter human instruction...">
+
+                <button onclick="submitCommand()">Send</button>
+
+            </div>
+
+
+
+            <div class="input-bar">
+
+                <textarea id="question" placeholder="Ask something..."></textarea>
+
+                <button id="start-btn" onclick="start()">Start</button>
+
+            </div>
+
         </div>
 
-        <div id="final" class="final-box hidden"></div>
-    </div>
-    <script src="/static/app.js"></script>
+        <script src="/static/app.js"></script>
+
+    </body>
+
+    </html>
+
 </body>
 
 </html>

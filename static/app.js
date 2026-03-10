@@ -1,161 +1,143 @@
-let rounds = [];              
-let currentRound = 0;        
-let activeRound = null;       
-let isRunning = false;        
-let context = null;
-let question = "";
+let running = false
+let paused = false
 
-const delay = ms => new Promise(res => setTimeout(res, ms));
+let commandType = null
 
-function updateSubmitState() {
-    const textarea = document.getElementById("question");
-    const btn = document.getElementById("submit-btn");
+const chat = document.getElementById("chat")
 
-    btn.disabled = textarea.value.trim().length === 0;
+function scrollBottom() {
+    chat.scrollTop = chat.scrollHeight
 }
 
-function showSpinner(el, text) {
-    el.innerHTML = `
-        <div class="spinner">
-            <div class="loader"></div>
-            <span class="status-text">${text}</span>
-        </div>
-    `;
+function addMessage(role, text) {
+
+
+    const div = document.createElement("div")
+
+    div.classList.add("message")
+    div.classList.add(role)
+
+    div.innerHTML = `
+    <div class="bubble">
+        ${marked.parse(text)}
+    </div>
+`
+
+    chat.appendChild(div)
+
+    scrollBottom()
+
+
 }
 
-async function typeBySentence(el, markdownText, speed = 550) {
-    el.innerHTML = "";
-
-    const sentences =
-        markdownText.match(/[^.!?]+[.!?]+/g) || [markdownText];
-
-    let acc = "";
-    for (const s of sentences) {
-        acc += s;
-        el.innerHTML = marked.parse(acc);
-
-        el.scrollTop = el.scrollHeight;
-
-        await delay(speed);
-    }
-}
+async function start() {
 
 
-function updateRoundLabel() {
-    document.getElementById("round-label").innerText =
-        `Round ${currentRound + 1}`;
-}
+    const q = document.getElementById("question").value.trim()
 
-function start() {
-    const input = document.getElementById("question");
-    question = input.value.trim();
-    if (!question) return;
+    if (!q) return
 
-    rounds = [];
-    currentRound = 0;
-    activeRound = null;
-    context = null;
-    question = document.getElementById("question").value.trim();
-    isRunning = false;
+    chat.innerHTML = ""
 
-    document.getElementById("final").classList.add("hidden");
-    document.getElementById("final").innerHTML = "";
+    addMessage("human", q)
 
-    runRound();
-}
-
-async function runRound() {
-    isRunning = true;
-
-    const aBox = document.getElementById("agentA");
-    const bBox = document.getElementById("agentB");
-    const jBox = document.getElementById("judge");
-
-    aBox.className = "box";
-    bBox.className = "box";
-    jBox.className = "box full";
-
-    showSpinner(aBox, "Agent A thinking...");
-    showSpinner(bBox, "Agent B thinking...");
-    jBox.innerHTML = "";
-
-    const res = await fetch("/run", {
+    await fetch("/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, context })
-    });
+        body: JSON.stringify({ question: q })
+    })
 
-    const data = await res.json();
-    activeRound = data;
+    running = true
+    paused = false
 
-    await Promise.all([
-    typeBySentence(aBox, data.agent_a),
-    typeBySentence(bBox, data.agent_b)
-    ]);
+    loop()
 
-    await delay(700);
-    showSpinner(jBox, "Judge deciding...");
 
-    await delay(1200);
-    await typeBySentence(jBox, data.judge);
+}
 
-    await delay(800);
-    aBox.className = "box " + (data.agree_a ? "green" : "red");
-    bBox.className = "box " + (data.agree_b ? "green" : "red");
+async function loop() {
 
-    rounds.push(data);
-    currentRound = rounds.length - 1;
-    context = data.new_context;
-    activeRound = null;
-    isRunning = false;
 
-    updateRoundLabel();
+    if (!running || paused) return
 
-    if (data.finished) {
-        document.getElementById("final").innerHTML =
-            "<h3>Final Verdict</h3>" + marked.parse(data.judge);
-        document.getElementById("final").classList.remove("hidden");
-    } else {
-        await delay(1200);
-        runRound();
+    const res = await fetch("/step", { method: "POST" })
+    const data = await res.json()
+
+    if (data.status === "paused") {
+        paused = true
+        return
     }
+
+    const agentClass = data.agent.replace(" ", "").toLowerCase()
+
+    addMessage(agentClass, `**${data.agent}**\n\n${data.text}`)
+
+    setTimeout(loop, 900)
+
+
 }
 
-function loadRound() {
-    const r = rounds[currentRound];
-    if (!r) return;
+async function pause() {
 
-    const a = document.getElementById("agentA");
-    const b = document.getElementById("agentB");
-    const j = document.getElementById("judge");
 
-    a.className = "box " + (r.agree_a ? "green" : "red");
-    b.className = "box " + (r.agree_b ? "green" : "red");
+    await fetch("/pause", { method: "POST" })
 
-    a.innerHTML = marked.parse(r.agent_a);
-    b.innerHTML = marked.parse(r.agent_b);
-    j.innerHTML = marked.parse(r.judge);
+    paused = true
 
-    updateRoundLabel();
+    addMessage("system", "⏸️ Session paused")
+
+
 }
 
-function prevRound() {
-    if (isRunning) return;
-    if (currentRound > 0) {
-        currentRound--;
-        loadRound();
+async function resume() {
+
+
+    await fetch("/resume", { method: "POST" })
+
+    paused = false
+
+    addMessage("system", "▶️ Session resumed")
+
+    loop()
+
+
+}
+
+function showInject() {
+
+
+    commandType = "inject"
+
+    document.getElementById("command-box").classList.remove("hidden")
+
+
+}
+
+async function submitCommand() {
+
+
+    const input = document.getElementById("command-input")
+
+    const msg = input.value.trim()
+
+    if (!msg) return
+
+
+    if (commandType === "inject") {
+
+        await fetch("/inject", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: msg })
+        })
+
+        addMessage("human", `🧑 Inject: ${msg}`)
     }
-}
 
-function nextRound() {
-    if (isRunning) return;
-    if (currentRound < rounds.length - 1) {
-        currentRound++;
-        loadRound();
-    }
-}
 
-document.addEventListener("DOMContentLoaded", () => {
-    const textarea = document.getElementById("question");
-    textarea.addEventListener("input", updateSubmitState);
-});
+    input.value = ""
+
+    document.getElementById("command-box").classList.add("hidden")
+
+
+}

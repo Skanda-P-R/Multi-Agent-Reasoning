@@ -1,103 +1,62 @@
 from flask import Flask, render_template, request, jsonify
-import requests
+from dpr_protocol import DPRSession
 
 app = Flask(__name__)
 
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
-API_KEY = "YOUR_GROQ_API_KEY"
+session = None
 
-HEADERS = {
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {API_KEY}"
-}
-
-def call_groq(model, messages):
-    payload = {
-        "model": model,
-        "messages": messages
-    }
-    r = requests.post(API_URL, headers=HEADERS, json=payload)
-    r.raise_for_status()
-    msg = r.json()["choices"][0]["message"]
-    return msg.get("content", "")
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/run", methods=["POST"])
-def run_round():
-    data = request.json
 
-    question = data["question"]
-    context = data.get("context")
+@app.route("/start", methods=["POST"])
+def start():
 
-    agent_a_model = "llama-3.1-8b-instant"
-    agent_b_model = "openai/gpt-oss-20b"
-    judge_model = "openai/gpt-oss-120b"
+    global session
 
-    messages_base = [{"role": "system", "content": "You are a reasoning AI agent."}]
-    if context:
-        messages_base.append({"role": "system", "content": context})
+    question = request.json["question"]
 
-    a_answer = call_groq(
-        agent_a_model,
-        messages_base + [{"role": "user", "content": question}]
-    )
+    session = DPRSession(question)
 
-    b_answer = call_groq(
-        agent_b_model,
-        messages_base + [{"role": "user", "content": question}]
-    )
+    return jsonify({"status": "started"})
 
-    judge_prompt = f"""
-Question:
-{question}
 
-Agent A Answer:
-{a_answer}
+@app.route("/step", methods=["POST"])
+def step():
 
-Agent B Answer:
-{b_answer}
+    global session
 
-Give:
-1. Correct answer
-2. Who is correct (A, B, Both, Neither)
-3. Clear reasoning
-"""
+    if not session:
+        return jsonify({"error": "no session"})
 
-    judge_verdict = call_groq(
-        judge_model,
-        [
-            {"role": "system", "content": "You are a strict judge AI."},
-            {"role": "user", "content": judge_prompt}
-        ]
-    )
+    result = session.step()
 
-    def agent_agrees(model):
-        result = call_groq(
-            model,
-            [
-                {"role": "system", "content": "Respond ONLY with AGREE or DISAGREE."},
-                {"role": "user", "content": judge_verdict}
-            ]
-        )
-        return result.strip().upper() == "AGREE"
+    return jsonify(result)
 
-    agree_a = agent_agrees(agent_a_model)
-    agree_b = agent_agrees(agent_b_model)
 
-    finished = agree_a and agree_b
+@app.route("/pause", methods=["POST"])
+def pause():
+    session.pause()
+    return jsonify({"status": "paused"})
 
-    return jsonify({
-        "agent_a": a_answer,
-        "agent_b": b_answer,
-        "judge": judge_verdict,
-        "agree_a": agree_a,
-        "agree_b": agree_b,
-        "finished": finished,
-        "new_context": f"Judge verdict to reconsider:\n{judge_verdict}"
-    })
+
+@app.route("/resume", methods=["POST"])
+def resume():
+    session.resume()
+    return jsonify({"status": "resumed"})
+
+
+@app.route("/inject", methods=["POST"])
+def inject():
+
+    msg = request.json["message"]
+
+    result = session.inject(msg)
+
+    return jsonify({"status": "ok", "log": result})
+
 
 if __name__ == "__main__":
     app.run(debug=True)
