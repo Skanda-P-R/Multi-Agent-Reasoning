@@ -2,77 +2,44 @@
 <html>
 
 <head>
-    <title>DPR Multi-Agent Reasoning</title>
-
+    <title>DPR Multi-Agent Console</title>
     <link rel="stylesheet" href="/static/style.css">
-
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 
 <body>
-    <!DOCTYPE html>
-
-    <html>
-
-    <head>
-
-        <title>DPR Multi-Agent Console</title>
-
-        <link rel="stylesheet" href="/static/style.css">
-
-        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-    </head>
-
-    <body>
-
-        <div class="app">
-
-            <div class="header">
-                Distributed Protocol for Reasoning
+    <div class="app">
+        <header class="header">
+            <div>
+                <h1>DPR Console</h1>
+                <p>Distributed Protocol for Reasoning</p>
             </div>
+            <span class="header-badge">Live Session</span>
+        </header>
 
+        <div id="chat" class="chat"></div>
 
-            <div id="chat" class="chat"></div>
-
-
-
-            <div class="control-panel">
-
-                <button onclick="pause()">Pause</button>
-                <button onclick="resume()">Resume</button>
-                <button onclick="showInject()">Inject</button>
-
-            </div>
-
-
-
-            <div id="command-box" class="command-box hidden">
-
-                <input id="command-input" placeholder="Enter human instruction...">
-
-                <button onclick="submitCommand()">Send</button>
-
-            </div>
-
-
-
-            <div class="input-bar">
-
-                <textarea id="question" placeholder="Ask something..."></textarea>
-
-                <button id="start-btn" onclick="start()">Start</button>
-
-            </div>
-
+        <div class="control-panel">
+            <button class="btn btn-muted" onclick="pause()">Pause</button>
+            <button class="btn btn-muted" onclick="resume()">Resume</button>
+            <button class="btn btn-muted" onclick="showInject()">Inject</button>
+            <button class="btn btn-muted" onclick="showRedirect()">Redirect</button>
         </div>
 
-        <script src="/static/app.js"></script>
+        <div id="command-box" class="command-box hidden">
+            <span id="command-label" class="command-label"></span>
+            <input id="command-input" placeholder="Enter command message...">
+            <input id="redirect-turns" type="number" min="1" value="3" class="hidden" title="Redirect turns">
+            <button class="btn" onclick="submitCommand()">Send</button>
+        </div>
 
-    </body>
+        <div class="input-bar">
+            <textarea id="question" placeholder="Ask something..."></textarea>
+            <button id="start-btn" class="btn" onclick="start()">Start</button>
+        </div>
+    </div>
 
-    </html>
-
+    <script src="/static/app.js"></script>
 </body>
 
 </html>

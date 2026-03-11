@@ -1,95 +1,135 @@
-# Multi-Agent Reasoning Web App (Flask + Groq)
+# Distributed Protocol for Reasoning (DPR)
 
-This project is an interactive multi-agent reasoning system built with Flask and Groq LLMs.
-It simulates two AI agents independently answering a question, a judge evaluating their responses, and an iterative reasoning loop until consensus is reached — all visualized in a modern, real-time web UI.
+This project is a web-based implementation of a **Distributed Protocol for Reasoning (DPR)** with multi-agent turn-taking and human governance controls.
 
-The UI features:
+It runs a shared reasoning session across 4 agents and provides a live console for:
 
-* Parallel agent responses (sentence-by-sentence typing)
-* Judge evaluation with staged delays
-* Visual agreement/disagreement indicators
-* Multi-round navigation with history
-* Markdown rendering
-* Polished, modern dashboard-style layout
+- start / pause / resume
+- human inject instructions
+- human redirect objective (for N turns)
+- visible protocol metadata (ignored responses, quota, hand-queue)
 
+---
 
-## Installation & Setup
-### 1. Clone the repository
-  ```
-  git clone https://github.com/your-username/multi-agent-reasoning.git
-  cd multi-agent-reasoning
-  ```
+## Current Architecture
 
-### 2. Create a virtual environment (recommended)
+### Backend
 
-  `python -m venv venv`
-  
-  Activate it:
-  
-  Windows
-  
-  `venv\Scripts\activate`
-  
-  
-  macOS / Linux
-  
-  `source venv/bin/activate`
+- `app.py` — Flask API + session lifecycle
+- `dpr_protocol.py` — DPR protocol engine (`DPRSession`)
 
-### 3. Install dependencies
+### Frontend
 
-`pip install -r requirements.txt`
+- `templates/index.html` — console layout
+- `static/app.js` — UI actions + polling loop
+- `static/style.css` — styling
 
+### Config / Safety
 
-Contents of requirements.txt:
+- `.env.example` — Sample API key config
+- `.gitignore` — excludes `.env` and Python cache files
+
+---
+
+## Protocol Features Implemented
+
+### Phase 1 Core
+
+- Talking-stick style sequencing (round-robin base)
+- Basic fairness / sequencing controls
+- Human console commands: **PAUSE**, **RESUME**, **INJECT**
+- Logged ignored responses (with reason)
+
+### Phase 2 Governance
+
+- Hand-raise interrupt queue
+- Quota-based contribution economy (`STARTING_QUOTA`)
+- Priority ordering using proximity-to-token for queued interrupts
+- Anti-starvation prioritization using `last_spoke` threshold
+
+### Facilitator Rules
+
+- Loop detection (normalized recent-response repeat check)
+- Fairness repeat-streak protection
+- Redirection support via human **REDIRECT** command
+- Facilitator event logging (`facilitator_log`)
+
+---
+
+## API Endpoints
+
+- `POST /start` → start session with `{ "question": "..." }`
+- `POST /step` → run one protocol step
+- `POST /pause` → pause session
+- `POST /resume` → resume session
+- `POST /inject` → inject instruction `{ "message": "..." }`
+- `POST /redirect` → redirect objective `{ "message": "...", "turns": 3 }`
+
+---
+
+## Setup
+
+### 1) Create & activate virtual environment (recommended)
+
+```bash
+python -m venv venv
 ```
-flask
-requests
+
+Windows:
+
+```bash
+venv\Scripts\activate
 ```
 
-### Getting a Groq API Key
+macOS/Linux:
 
-This project uses the Groq API to run the AI agents and judge.
+```bash
+source venv/bin/activate
+```
 
-Step-by-step:
+### 2) Install dependencies
 
-1. Go to  `https://console.groq.com/keys`
-2. Sign up or log in with your account
-3. Click Create API Key
-4. Copy the generated key
-`(It will look like: gsk_...)`
-5. Configure the API Key
-   * Open app.py and find this line:
-     `API_KEY = "PUT_YOUR_API_KEY_HERE"`
-   * Replace it with your actual Groq API key:
-     `API_KEY = "gsk_your_actual_key_here"`
+```bash
+pip install flask requests python-dotenv
+```
 
-⚠️ Important:
-Do NOT commit your real API key to a public repository.
-If publishing publicly, use environment variables instead.
+### 3) Configure Groq API key with `.env`
 
-### Running the App
+In `Multi-Agent-Reasoning/`:
 
-Start the Flask server:
+1. Copy `.env.example` to `.env`
+2. Edit `.env` and set:
 
-`python app.py`
+```env
+GROQ_API_KEY=gsk_your_actual_key_here
+```
 
+### 4) Run
 
-You should see output like:
+From `Multi-Agent-Reasoning/`:
 
-`Running on http://127.0.0.1:5000`
+```bash
+python app.py
+```
 
+Open: `http://127.0.0.1:5000`
 
-Open your browser and go to:
+---
 
-`http://127.0.0.1:5000`
+## Models (default)
 
+Configured in `dpr_protocol.py`:
 
-## Models Used
+- Agent 1: `llama-3.3-70b-versatile`
+- Agent 2: `openai/gpt-oss-120b`
+- Agent 3: `moonshotai/kimi-k2-instruct`
+- Agent 4: `openai/gpt-oss-20b`
 
-Agent A: llama-3.1-8b-instant
+You can modify the `AGENTS` list to change models.
 
-Agent B: openai/gpt-oss-20b
+---
 
-Judge: openai/gpt-oss-120b
+## Notes
 
-(You can easily swap these in app.py.)
+- This uses Flask dev server (`debug=True`) and is not production-ready.
+- Keep `.env` private and never commit real API keys.
