@@ -90,7 +90,7 @@ source venv/bin/activate
 ### 2) Install dependencies
 
 ```bash
-pip install flask requests python-dotenv
+pip install -r requirements.txt
 ```
 
 ### 3) Configure Groq API key with `.env`
