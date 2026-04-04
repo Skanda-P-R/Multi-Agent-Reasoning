@@ -8,6 +8,20 @@
 </head>
 
 <body>
+    <button class="memory-toggle" onclick="toggleMemoryDrawer()">Memory</button>
+
+    <aside id="memory-drawer" class="memory-drawer">
+        <div class="memory-header">
+            <h2>Shared Memory</h2>
+            <button class="btn btn-muted" onclick="toggleMemoryDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <div id="memory-view"></div>
+            <h3>Context Preview</h3>
+            <pre id="context-view" class="context-view">(no context yet)</pre>
+        </div>
+    </aside>
+
     <div class="app">
         <header class="header">
             <div>
@@ -22,6 +36,7 @@
         <div class="control-panel">
             <button class="btn btn-muted" onclick="pause()">Pause</button>
             <button class="btn btn-muted" onclick="resume()">Resume</button>
+            <button class="btn btn-muted" onclick="stopReasoning()">Stop Reasoning</button>
             <button class="btn btn-muted" onclick="raiseHand()">Raise Hand</button>
         </div>
 
@@ -29,6 +44,13 @@
             <span class="command-label">HUMAN TURN ACTION</span>
             <button class="btn btn-muted" onclick="showHumanTurnInject()">Use Inject</button>
             <button class="btn btn-muted" onclick="showHumanTurnRedirect()">Use Redirect</button>
+        </div>
+
+        <div id="finalization-options" class="control-panel hidden">
+            <span class="command-label">COMPLETION CONTROL</span>
+            <button class="btn btn-muted" onclick="approveStop()">Approve Stop</button>
+            <button class="btn btn-muted" onclick="continueIteration()">Continue Iteration</button>
+            <button class="btn btn-muted" onclick="showFinalizeRedirect()">Redirect & Continue</button>
         </div>
 
         <div id="command-box" class="command-box hidden">

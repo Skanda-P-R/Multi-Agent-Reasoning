@@ -193,3 +193,85 @@ button:hover {
 .hidden {
     display: none;
 }
+
+.memory-toggle {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 20;
+    border: none;
+    color: #f8fafc;
+    background: #1e293b;
+    border: 1px solid #475569;
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.memory-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(420px, 92vw);
+    height: 100vh;
+    background: #0b1220;
+    border-right: 1px solid #334155;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.45);
+}
+
+.memory-drawer.open {
+    transform: translateX(0);
+}
+
+.memory-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px;
+    border-bottom: 1px solid #334155;
+}
+
+.memory-header h2 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.memory-content {
+    overflow-y: auto;
+    padding: 14px;
+}
+
+.memory-section {
+    margin-bottom: 16px;
+}
+
+.memory-section h3,
+.memory-content h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: #cbd5e1;
+}
+
+.memory-section ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #e2e8f0;
+    line-height: 1.45;
+}
+
+.context-view {
+    margin: 0;
+    white-space: pre-wrap;
+    background: #111827;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px;
+    color: #e2e8f0;
+    font-size: 12px;
+}

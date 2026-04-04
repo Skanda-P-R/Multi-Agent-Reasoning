@@ -66,6 +66,20 @@ def resume():
     return jsonify({"status": "resumed"})
 
 
+@app.route("/stop", methods=["POST"])
+def stop():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    session.stop()
+    return jsonify({
+        "status": "done",
+        "agent": "Human",
+        "text": "Reasoning stopped by human."
+    })
+
+
 @app.route("/inject", methods=["POST"])
 def inject():
     missing = _require_session()
@@ -129,6 +143,40 @@ def redirect():
 
     result = session.redirect(msg, turns)
     return jsonify({"status": "ok", "log": result})
+
+
+@app.route("/finalize/approve", methods=["POST"])
+def finalize_approve():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    try:
+        result = session.approve_finalization()
+    except RuntimeError as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+    return jsonify(result)
+
+
+@app.route("/finalize/continue", methods=["POST"])
+def finalize_continue():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    redirect_message = request.json.get("redirect_message", "").strip()
+    turns = request.json.get("turns", 3)
+
+    try:
+        result = session.continue_after_finalization(
+            redirect_message=redirect_message or None,
+            turns=turns
+        )
+    except RuntimeError as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+    return jsonify(result)
 
 
 if __name__ == "__main__":

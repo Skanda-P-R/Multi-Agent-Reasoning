@@ -1,17 +1,33 @@
+const STEP_DELAY_MS = 900
+
 let running = false
 let paused = false
-
 let commandType = null
 
 const chat = document.getElementById("chat")
+const memoryDrawer = document.getElementById("memory-drawer")
+const memoryView = document.getElementById("memory-view")
+const contextView = document.getElementById("context-view")
 
 function scrollBottom() {
     chat.scrollTop = chat.scrollHeight
 }
 
+function escapeHtml(str) {
+    return (str || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+}
+
+function truncateForDrawer(text, limit = 260) {
+    if (!text) return ""
+    if (text.length <= limit) return text
+    return `${text.slice(0, limit).trim()} [truncated in view]`
+}
+
 function addMessage(role, text) {
     const div = document.createElement("div")
-
     div.classList.add("message")
     div.classList.add(role)
 
@@ -29,12 +45,55 @@ function addSystem(text) {
     addMessage("system", text)
 }
 
+function toggleMemoryDrawer() {
+    memoryDrawer.classList.toggle("open")
+}
+
+function renderMemory(memory, contextPreview) {
+    if (!memory) return
+
+    const sections = [
+        ["facts", "Facts / Assumptions"],
+        ["options", "Options / Proposals"],
+        ["decisions", "Decisions"],
+        ["open_questions", "Open Questions"],
+        ["actions", "Action Items"],
+        ["changelog", "Changelog"],
+    ]
+
+    let html = ""
+    for (const [key, title] of sections) {
+        const values = Array.isArray(memory[key]) ? memory[key] : []
+        const items = values.length
+            ? values.map((v) => `<li>${escapeHtml(truncateForDrawer(v))}</li>`).join("")
+            : "<li>(none)</li>"
+
+        html += `
+        <section class="memory-section">
+            <h3>${title}</h3>
+            <ul>${items}</ul>
+        </section>
+        `
+    }
+
+    memoryView.innerHTML = html
+    contextView.textContent = contextPreview || "(no context yet)"
+}
+
 function showHumanTurnOptions() {
     document.getElementById("human-turn-options").classList.remove("hidden")
 }
 
 function hideHumanTurnOptions() {
     document.getElementById("human-turn-options").classList.add("hidden")
+}
+
+function showFinalizationOptions() {
+    document.getElementById("finalization-options").classList.remove("hidden")
+}
+
+function hideFinalizationOptions() {
+    document.getElementById("finalization-options").classList.add("hidden")
 }
 
 function showCommandBox(type, label, placeholder) {
@@ -45,7 +104,7 @@ function showCommandBox(type, label, placeholder) {
     input.placeholder = placeholder
 
     const redirectTurns = document.getElementById("redirect-turns")
-    if (type === "redirect" || type === "human_turn_redirect") {
+    if (type === "human_turn_redirect") {
         redirectTurns.classList.remove("hidden")
     } else {
         redirectTurns.classList.add("hidden")
@@ -61,6 +120,8 @@ async function start() {
 
     chat.innerHTML = ""
     addMessage("human", q)
+    memoryView.innerHTML = ""
+    contextView.textContent = "(waiting for first turn)"
 
     await fetch("/start", {
         method: "POST",
@@ -71,6 +132,7 @@ async function start() {
     running = true
     paused = false
     hideHumanTurnOptions()
+    hideFinalizationOptions()
 
     loop()
 }
@@ -80,6 +142,8 @@ async function loop() {
 
     const res = await fetch("/step", { method: "POST" })
     const data = await res.json()
+
+    renderMemory(data.memory, data.context_preview)
 
     if (data.status === "error") {
         addSystem(`Error: ${data.error || "Unknown server error"}`)
@@ -99,10 +163,21 @@ async function loop() {
         return
     }
 
+    if (data.status === "awaiting_human_finalization") {
+        paused = true
+        const candidate = data.finalization_candidate || {}
+        addSystem(
+            `Completion candidate by **${candidate.agent || "Agent"}**. Human approval required.`
+        )
+        showFinalizationOptions()
+        return
+    }
+
     if (data.status === "done") {
         addMessage("system", `**${data.agent}**\n\n${data.text}`)
         running = false
         hideHumanTurnOptions()
+        hideFinalizationOptions()
         return
     }
 
@@ -121,7 +196,7 @@ async function loop() {
 
     addMessage(agentClass, `**${data.agent}**\n\n${data.text}${meta}`)
 
-    setTimeout(loop, 900)
+    setTimeout(loop, STEP_DELAY_MS)
 }
 
 async function pause() {
@@ -140,6 +215,26 @@ async function resume() {
     loop()
 }
 
+async function stopReasoning() {
+    const res = await fetch("/stop", { method: "POST" })
+    const data = await res.json()
+
+    if (data.status === "error") {
+        addSystem(`Error: ${data.error}`)
+        return
+    }
+
+    if (data.memory || data.context_preview) {
+        renderMemory(data.memory, data.context_preview)
+    }
+
+    addMessage("system", `**${data.agent || "Human"}**\n\n${data.text || "Reasoning stopped."}`)
+    hideHumanTurnOptions()
+    hideFinalizationOptions()
+    running = false
+    paused = false
+}
+
 async function raiseHand() {
     const res = await fetch("/raise_hand", { method: "POST" })
     const data = await res.json()
@@ -152,16 +247,6 @@ async function raiseHand() {
     addMessage("human", "Hand raised for protocol turn.")
 }
 
-function showInject() {
-    hideHumanTurnOptions()
-    showCommandBox("inject", "INJECT", "Enter human instruction...")
-}
-
-function showRedirect() {
-    hideHumanTurnOptions()
-    showCommandBox("redirect", "REDIRECT", "Enter redirection objective...")
-}
-
 function showHumanTurnInject() {
     showCommandBox("human_turn_inject", "HUMAN TURN: INJECT", "Enter instruction for agents...")
 }
@@ -170,34 +255,48 @@ function showHumanTurnRedirect() {
     showCommandBox("human_turn_redirect", "HUMAN TURN: REDIRECT", "Enter redirection objective...")
 }
 
+function showFinalizeRedirect() {
+    showCommandBox("finalize_redirect", "REDIRECT & CONTINUE", "Enter redirection objective...")
+}
+
+async function approveStop() {
+    const res = await fetch("/finalize/approve", { method: "POST" })
+    const data = await res.json()
+    if (data.status === "error") {
+        addSystem(`Error: ${data.error}`)
+        return
+    }
+
+    renderMemory(data.memory, data.context_preview)
+    addMessage("system", `**${data.agent}**\n\n${data.text}`)
+    hideFinalizationOptions()
+    running = false
+    paused = false
+}
+
+async function continueIteration() {
+    const res = await fetch("/finalize/continue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+    })
+    const data = await res.json()
+    if (data.status === "error") {
+        addSystem(`Error: ${data.error}`)
+        return
+    }
+
+    renderMemory(data.memory, data.context_preview)
+    hideFinalizationOptions()
+    paused = false
+    setTimeout(loop, 300)
+}
+
 async function submitCommand() {
     const input = document.getElementById("command-input")
     const msg = input.value.trim()
 
     if (!msg) return
-
-    if (commandType === "inject") {
-        await fetch("/inject", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: msg })
-        })
-
-        addMessage("human", `Inject: ${msg}`)
-    }
-
-    if (commandType === "redirect") {
-        const turnsRaw = document.getElementById("redirect-turns").value
-        const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
-
-        await fetch("/redirect", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: msg, turns })
-        })
-
-        addMessage("human", `Redirect (${turns} turns): ${msg}`)
-    }
 
     if (commandType === "human_turn_inject") {
         const res = await fetch("/human_turn", {
@@ -212,6 +311,7 @@ async function submitCommand() {
             return
         }
 
+        renderMemory(data.memory, data.context_preview)
         addMessage("human", `Inject: ${msg}`)
         hideHumanTurnOptions()
         paused = false
@@ -234,8 +334,32 @@ async function submitCommand() {
             return
         }
 
+        renderMemory(data.memory, data.context_preview)
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideHumanTurnOptions()
+        paused = false
+        setTimeout(loop, 300)
+    }
+
+    if (commandType === "finalize_redirect") {
+        const turnsRaw = document.getElementById("redirect-turns").value
+        const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
+
+        const res = await fetch("/finalize/continue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ redirect_message: msg, turns })
+        })
+        const data = await res.json()
+
+        if (data.status === "error") {
+            addSystem(`Error: ${data.error}`)
+            return
+        }
+
+        renderMemory(data.memory, data.context_preview)
+        addMessage("human", `Redirect (${turns} turns): ${msg}`)
+        hideFinalizationOptions()
         paused = false
         setTimeout(loop, 300)
     }
