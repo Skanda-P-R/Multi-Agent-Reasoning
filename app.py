@@ -81,6 +81,40 @@ def inject():
     return jsonify({"status": "ok", "log": result})
 
 
+@app.route("/raise_hand", methods=["POST"])
+def raise_hand():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    result = session.raise_human_hand()
+    return jsonify({"status": "ok", "log": result})
+
+
+@app.route("/human_turn", methods=["POST"])
+def human_turn():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    action = request.json.get("action")
+    msg = request.json.get("message", "").strip()
+    if not msg:
+        return jsonify({"status": "error", "error": "message is required"}), 400
+
+    turns = request.json.get("turns", 3)
+
+    try:
+        if action in ("inject", "redirect"):
+            result = session.submit_human_turn_action(action, msg, turns)
+        else:
+            result = session.submit_human_turn(msg)
+    except RuntimeError as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+    return jsonify(result)
+
+
 @app.route("/redirect", methods=["POST"])
 def redirect():
     missing = _require_session()

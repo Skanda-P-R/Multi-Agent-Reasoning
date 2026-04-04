@@ -22,8 +22,13 @@
         <div class="control-panel">
             <button class="btn btn-muted" onclick="pause()">Pause</button>
             <button class="btn btn-muted" onclick="resume()">Resume</button>
-            <button class="btn btn-muted" onclick="showInject()">Inject</button>
-            <button class="btn btn-muted" onclick="showRedirect()">Redirect</button>
+            <button class="btn btn-muted" onclick="raiseHand()">Raise Hand</button>
+        </div>
+
+        <div id="human-turn-options" class="control-panel hidden">
+            <span class="command-label">HUMAN TURN ACTION</span>
+            <button class="btn btn-muted" onclick="showHumanTurnInject()">Use Inject</button>
+            <button class="btn btn-muted" onclick="showHumanTurnRedirect()">Use Redirect</button>
         </div>
 
         <div id="command-box" class="command-box hidden">

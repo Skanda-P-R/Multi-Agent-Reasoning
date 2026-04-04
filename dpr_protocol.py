@@ -26,6 +26,7 @@ REDIRECT_DURATION_TURNS = 3
 STARVATION_THRESHOLD = 5
 LOOP_WINDOW = 4
 MAX_REPEAT_STREAK = 2
+HUMAN_NAME = "Human"
 
 
 def call_model(model, messages, max_tokens=500):
@@ -80,6 +81,8 @@ class DPRSession:
         }
 
         self.hand_queue = deque()
+        self.human_hand_raised = False
+        self.awaiting_human_turn = False
         self.current_index = 0
         self.last_speaker = None
         self.repeat_streak = 0
@@ -91,6 +94,8 @@ class DPRSession:
         return next(i for i, a in enumerate(AGENTS) if a["name"] == agent_name)
 
     def _token_distance(self, agent_name):
+        if agent_name == HUMAN_NAME:
+            return -1
         idx = self._agent_index(agent_name)
         return (idx - self.current_index) % len(AGENTS)
 
@@ -191,7 +196,7 @@ Instructions:
     def select_next_agent(self):
 
         live_agents = [a["name"] for a in AGENTS if self.quotas[a["name"]] > 0]
-        if not live_agents:
+        if not live_agents and not self.human_hand_raised:
             return None
 
         starved_agents = [
@@ -212,10 +217,16 @@ Instructions:
             return chosen
 
         if self.hand_queue:
-            candidates = [a for a in list(self.hand_queue) if self.quotas[a] > 0]
+            candidates = [
+                a for a in list(self.hand_queue)
+                if a == HUMAN_NAME or self.quotas[a] > 0
+            ]
             if candidates:
                 agent = sorted(candidates, key=lambda a: self._token_distance(a))[0]
                 self.hand_queue = deque([a for a in self.hand_queue if a != agent])
+                if agent == HUMAN_NAME:
+                    self.human_hand_raised = False
+                    return HUMAN_NAME
                 self.current_index = (self._agent_index(agent) + 1) % len(AGENTS)
                 return agent
 
@@ -260,6 +271,16 @@ Instructions:
                 "agent": "System",
                 "text": "All agents exhausted quotas.",
                 "round": self.turn
+            }
+
+        if agent_name == HUMAN_NAME:
+            self.awaiting_human_turn = True
+            return {
+                "status": "awaiting_human_turn",
+                "agent": HUMAN_NAME,
+                "text": "Human turn selected. Please submit your reasoning.",
+                "round": self.turn,
+                "queued_interrupts": list(self.hand_queue)
             }
 
 
@@ -368,11 +389,94 @@ Instructions:
         self.pending_human_instruction = msg
 
         entry = {
-            "agent": "Human",
+            "agent": HUMAN_NAME,
             "text": msg
         }
         self.responses.append(entry)
         return entry
+
+    def raise_human_hand(self):
+        if HUMAN_NAME not in self.hand_queue:
+            self.hand_queue.append(HUMAN_NAME)
+        self.human_hand_raised = True
+        self._push_facilitator_event("human_hand_raise", "Human raised hand for turn.")
+        return {
+            "agent": HUMAN_NAME,
+            "text": "Hand raised for a protocol turn."
+        }
+
+    def submit_human_turn(self, msg):
+        if not self.awaiting_human_turn:
+            raise RuntimeError("Human turn is not active right now.")
+
+        entry = {
+            "agent": HUMAN_NAME,
+            "text": msg,
+            "accepted": True
+        }
+        self.responses.append(entry)
+        self._update_summary(msg)
+
+        self.last_speaker = HUMAN_NAME
+        self.repeat_streak = 1
+
+        self.enqueue_interrupts(HUMAN_NAME)
+        self.awaiting_human_turn = False
+        self.turn += 1
+
+        return {
+            "status": "ok",
+            "agent": HUMAN_NAME,
+            "text": msg,
+            "round": self.turn,
+            "ignored": False,
+            "ignored_reason": None,
+            "quota_left": None,
+            "queued_interrupts": list(self.hand_queue)
+        }
+
+    def submit_human_turn_action(self, action, msg, turns=REDIRECT_DURATION_TURNS):
+        if not self.awaiting_human_turn:
+            raise RuntimeError("Human turn is not active right now.")
+
+        if action == "inject":
+            self.pending_human_instruction = msg
+            turn_text = f"INJECT: {msg}"
+        elif action == "redirect":
+            self.pending_redirect = {
+                "message": msg,
+                "remaining": max(1, int(turns))
+            }
+            self._push_facilitator_event("redirect", f"Redirect set: {msg}")
+            turn_text = f"REDIRECT ({self.pending_redirect['remaining']} turns): {msg}"
+        else:
+            raise RuntimeError("Invalid human turn action.")
+
+        entry = {
+            "agent": HUMAN_NAME,
+            "text": turn_text,
+            "accepted": True
+        }
+        self.responses.append(entry)
+        self._update_summary(turn_text)
+
+        self.last_speaker = HUMAN_NAME
+        self.repeat_streak = 1
+
+        self.enqueue_interrupts(HUMAN_NAME)
+        self.awaiting_human_turn = False
+        self.turn += 1
+
+        return {
+            "status": "ok",
+            "agent": HUMAN_NAME,
+            "text": turn_text,
+            "round": self.turn,
+            "ignored": False,
+            "ignored_reason": None,
+            "quota_left": None,
+            "queued_interrupts": list(self.hand_queue)
+        }
 
     def redirect(self, msg, turns=REDIRECT_DURATION_TURNS):
         self.pending_redirect = {
@@ -381,7 +485,7 @@ Instructions:
         }
         self._push_facilitator_event("redirect", f"Redirect set: {msg}")
         entry = {
-            "agent": "Human",
+            "agent": HUMAN_NAME,
             "text": f"REDIRECT ({self.pending_redirect['remaining']} turns): {msg}"
         }
         self.responses.append(entry)
