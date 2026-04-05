@@ -1,10 +1,22 @@
-const STEP_DELAY_MS = 900
+const STEP_DELAY_MS = 500
 
 let running = false
 let paused = false
 let commandType = null
+let selectedModels = []
+let availableModels = []
+let agentModelMap = {}
+let agentColorMap = {}
+let loopEpoch = 0
 
 const chat = document.getElementById("chat")
+const startBtn = document.getElementById("start-btn")
+const commandInput = document.getElementById("command-input")
+const commandSendBtn = document.getElementById("command-send-btn")
+const redirectTurnsInput = document.getElementById("redirect-turns")
+const modelsDrawer = document.getElementById("models-drawer")
+const modelsList = document.getElementById("models-list")
+const modelCount = document.getElementById("model-count")
 const memoryDrawer = document.getElementById("memory-drawer")
 const memoryView = document.getElementById("memory-view")
 const contextView = document.getElementById("context-view")
@@ -26,16 +38,55 @@ function truncateForDrawer(text, limit = 260) {
     return `${text.slice(0, limit).trim()} [truncated in view]`
 }
 
-function addMessage(role, text) {
+function formatAgentHeading(agent, agentModel) {
+    const model = agentModel || agentModelMap[agent]
+    if (!model) return `**${agent}**`
+    return `**${agent}** \`${model}\``
+}
+
+function generateAgentBubble(index, total) {
+    const t = Math.max(total, 2)
+    const hue = Math.round((index * 360) / t)
+    const hue2 = (hue + 20) % 360
+    return `linear-gradient(135deg, hsla(${hue} 58% 58% / 0.88), hsla(${hue2} 62% 50% / 0.9))`
+}
+
+function setupAgentStyling(agents) {
+    agentModelMap = {}
+    agentColorMap = {}
+    if (!Array.isArray(agents)) return
+    const total = agents.length
+    agents.forEach((a, idx) => {
+        agentModelMap[a.name] = a.model
+        agentColorMap[a.name] = generateAgentBubble(idx, total)
+    })
+}
+
+function getAgentBubble(agentName) {
+    if (agentColorMap[agentName]) return agentColorMap[agentName]
+    const idx = Object.keys(agentColorMap).length
+    const fallback = generateAgentBubble(idx, idx + 1)
+    agentColorMap[agentName] = fallback
+    return fallback
+}
+
+function addMessage(role, text, options = {}) {
     const div = document.createElement("div")
     div.classList.add("message")
     div.classList.add(role)
+    if (options.bubbleBackground) {
+        div.classList.add("agent-dynamic")
+    }
 
     div.innerHTML = `
     <div class="bubble">
         ${marked.parse(text)}
     </div>
 `
+    if (options.bubbleBackground) {
+        const bubble = div.querySelector(".bubble")
+        bubble.style.background = options.bubbleBackground
+    }
 
     chat.appendChild(div)
     scrollBottom()
@@ -47,6 +98,62 @@ function addSystem(text) {
 
 function toggleMemoryDrawer() {
     memoryDrawer.classList.toggle("open")
+}
+
+function toggleModelsDrawer() {
+    modelsDrawer.classList.toggle("open")
+}
+
+function updateStartButtonState() {
+    startBtn.disabled = selectedModels.length < 2
+}
+
+function renderModelSelector() {
+    const html = availableModels.map((model) => {
+        const checked = selectedModels.includes(model) ? "checked" : ""
+        return `
+        <label class="model-item">
+            <input type="checkbox" value="${escapeHtml(model)}" ${checked} onchange="toggleModel('${model.replaceAll("'", "\\'")}')">
+            <span>${escapeHtml(model)}</span>
+        </label>
+        `
+    }).join("")
+
+    modelsList.innerHTML = html
+    modelCount.textContent = `${selectedModels.length} selected (minimum 2 required)`
+    const selectAllBox = document.getElementById("select-all-models")
+    if (selectAllBox) {
+        selectAllBox.checked = availableModels.length > 0 && selectedModels.length === availableModels.length
+    }
+    updateStartButtonState()
+}
+
+function toggleModel(model) {
+    if (selectedModels.includes(model)) {
+        selectedModels = selectedModels.filter((m) => m !== model)
+    } else {
+        selectedModels.push(model)
+    }
+    renderModelSelector()
+}
+
+function toggleSelectAll(checked) {
+    if (checked) {
+        selectedModels = [...availableModels]
+    } else {
+        selectedModels = []
+    }
+    renderModelSelector()
+}
+
+async function loadModels() {
+    const res = await fetch("/models")
+    const data = await res.json()
+    availableModels = Array.isArray(data.models) ? data.models : []
+    const defaults = Array.isArray(data.default_models) ? data.default_models : []
+    const validDefaults = defaults.filter((m) => availableModels.includes(m))
+    selectedModels = validDefaults.length ? validDefaults : availableModels.slice(0, 4)
+    renderModelSelector()
 }
 
 function renderMemory(memory, contextPreview) {
@@ -96,41 +203,67 @@ function hideFinalizationOptions() {
     document.getElementById("finalization-options").classList.add("hidden")
 }
 
+function isCommandReady() {
+    const msg = commandInput.value.trim()
+    if (!msg) return false
+    if (commandType === "human_turn_redirect" || commandType === "finalize_redirect") {
+        const turns = parseInt(redirectTurnsInput.value || "3", 10)
+        return Number.isFinite(turns) && turns >= 1
+    }
+    return true
+}
+
+function updateCommandSendState() {
+    commandSendBtn.disabled = !isCommandReady()
+}
+
 function showCommandBox(type, label, placeholder) {
     commandType = type
     document.getElementById("command-label").textContent = label
 
-    const input = document.getElementById("command-input")
-    input.placeholder = placeholder
+    commandInput.placeholder = placeholder
+    commandInput.value = ""
 
-    const redirectTurns = document.getElementById("redirect-turns")
-    if (type === "human_turn_redirect") {
-        redirectTurns.classList.remove("hidden")
+    if (type === "human_turn_redirect" || type === "finalize_redirect") {
+        redirectTurnsInput.classList.remove("hidden")
     } else {
-        redirectTurns.classList.add("hidden")
+        redirectTurnsInput.classList.add("hidden")
     }
 
     document.getElementById("command-box").classList.remove("hidden")
-    input.focus()
+    updateCommandSendState()
+    commandInput.focus()
 }
 
 async function start() {
     const q = document.getElementById("question").value.trim()
     if (!q) return
+    if (selectedModels.length < 2) {
+        addSystem("Select at least 2 models before starting.")
+        return
+    }
 
     chat.innerHTML = ""
     addMessage("human", q)
     memoryView.innerHTML = ""
     contextView.textContent = "(waiting for first turn)"
 
-    await fetch("/start", {
+    const res = await fetch("/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q })
+        body: JSON.stringify({ question: q, models: selectedModels })
     })
+    const data = await res.json()
+    if (data.status === "error") {
+        addSystem(`Error: ${data.error}`)
+        return
+    }
+
+    setupAgentStyling(data.agents)
 
     running = true
     paused = false
+    loopEpoch += 1
     hideHumanTurnOptions()
     hideFinalizationOptions()
 
@@ -139,9 +272,11 @@ async function start() {
 
 async function loop() {
     if (!running || paused) return
+    const myEpoch = loopEpoch
 
     const res = await fetch("/step", { method: "POST" })
     const data = await res.json()
+    if (!running || paused || myEpoch !== loopEpoch) return
 
     renderMemory(data.memory, data.context_preview)
 
@@ -166,15 +301,26 @@ async function loop() {
     if (data.status === "awaiting_human_finalization") {
         paused = true
         const candidate = data.finalization_candidate || {}
+        if (candidate.text) {
+            const candidateClass = (candidate.agent || "system").replace(" ", "").toLowerCase()
+            addMessage(
+                candidateClass,
+                `${formatAgentHeading(candidate.agent || "Agent", candidate.model)}\n\n${candidate.text}`,
+                { bubbleBackground: getAgentBubble(candidate.agent || "Agent") }
+            )
+        }
         addSystem(
-            `Completion candidate by **${candidate.agent || "Agent"}**. Human approval required.`
+            `Completion candidate by ${formatAgentHeading(candidate.agent || "Agent", candidate.model)}. Human approval required.`
         )
         showFinalizationOptions()
         return
     }
 
     if (data.status === "done") {
-        addMessage("system", `**${data.agent}**\n\n${data.text}`)
+        const heading = data.agent === "System" || data.agent === "Human"
+            ? `**${data.agent}**`
+            : formatAgentHeading(data.agent, data.agent_model)
+        addMessage("system", `${heading}\n\n${data.text}`)
         running = false
         hideHumanTurnOptions()
         hideFinalizationOptions()
@@ -194,7 +340,11 @@ async function loop() {
         meta += `\n\n_Hand queue_: ${data.queued_interrupts.join(", ")}`
     }
 
-    addMessage(agentClass, `**${data.agent}**\n\n${data.text}${meta}`)
+    addMessage(
+        agentClass,
+        `${formatAgentHeading(data.agent, data.agent_model)}\n\n${data.text}${meta}`,
+        { bubbleBackground: getAgentBubble(data.agent) }
+    )
 
     setTimeout(loop, STEP_DELAY_MS)
 }
@@ -203,6 +353,7 @@ async function pause() {
     await fetch("/pause", { method: "POST" })
 
     paused = true
+    loopEpoch += 1
     addMessage("system", "Session paused")
 }
 
@@ -210,6 +361,7 @@ async function resume() {
     await fetch("/resume", { method: "POST" })
 
     paused = false
+    loopEpoch += 1
     addMessage("system", "Session resumed")
 
     loop()
@@ -228,11 +380,15 @@ async function stopReasoning() {
         renderMemory(data.memory, data.context_preview)
     }
 
-    addMessage("system", `**${data.agent || "Human"}**\n\n${data.text || "Reasoning stopped."}`)
+    const heading = data.agent === "System" || data.agent === "Human"
+        ? `**${data.agent || "Human"}**`
+        : formatAgentHeading(data.agent || "Agent", data.agent_model)
+    addMessage("system", `${heading}\n\n${data.text || "Reasoning stopped."}`)
     hideHumanTurnOptions()
     hideFinalizationOptions()
     running = false
     paused = false
+    loopEpoch += 1
 }
 
 async function raiseHand() {
@@ -268,10 +424,14 @@ async function approveStop() {
     }
 
     renderMemory(data.memory, data.context_preview)
-    addMessage("system", `**${data.agent}**\n\n${data.text}`)
+    const heading = data.agent === "System" || data.agent === "Human"
+        ? `**${data.agent}**`
+        : formatAgentHeading(data.agent, data.agent_model)
+    addMessage("system", `${heading}\n\n${data.text}`)
     hideFinalizationOptions()
     running = false
     paused = false
+    loopEpoch += 1
 }
 
 async function continueIteration() {
@@ -289,12 +449,12 @@ async function continueIteration() {
     renderMemory(data.memory, data.context_preview)
     hideFinalizationOptions()
     paused = false
+    loopEpoch += 1
     setTimeout(loop, 300)
 }
 
 async function submitCommand() {
-    const input = document.getElementById("command-input")
-    const msg = input.value.trim()
+    const msg = commandInput.value.trim()
 
     if (!msg) return
 
@@ -315,11 +475,12 @@ async function submitCommand() {
         addMessage("human", `Inject: ${msg}`)
         hideHumanTurnOptions()
         paused = false
+        loopEpoch += 1
         setTimeout(loop, 300)
     }
 
     if (commandType === "human_turn_redirect") {
-        const turnsRaw = document.getElementById("redirect-turns").value
+        const turnsRaw = redirectTurnsInput.value
         const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
 
         const res = await fetch("/human_turn", {
@@ -338,11 +499,12 @@ async function submitCommand() {
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideHumanTurnOptions()
         paused = false
+        loopEpoch += 1
         setTimeout(loop, 300)
     }
 
     if (commandType === "finalize_redirect") {
-        const turnsRaw = document.getElementById("redirect-turns").value
+        const turnsRaw = redirectTurnsInput.value
         const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
 
         const res = await fetch("/finalize/continue", {
@@ -361,10 +523,16 @@ async function submitCommand() {
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideFinalizationOptions()
         paused = false
+        loopEpoch += 1
         setTimeout(loop, 300)
     }
 
-    input.value = ""
+    commandInput.value = ""
     document.getElementById("command-box").classList.add("hidden")
     commandType = null
+    updateCommandSendState()
 }
+
+loadModels()
+commandInput.addEventListener("input", updateCommandSendState)
+redirectTurnsInput.addEventListener("input", updateCommandSendState)

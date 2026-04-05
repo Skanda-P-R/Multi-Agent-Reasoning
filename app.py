@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-from dpr_protocol import DPRSession
+from dpr_protocol import DPRSession, AVAILABLE_MODELS, DEFAULT_AGENT_MODELS
 
 app = Flask(__name__)
 
@@ -22,11 +22,30 @@ def start():
 
     global session
 
-    question = request.json["question"]
+    payload = request.json or {}
+    question = (payload.get("question") or "").strip()
+    models = payload.get("models") or []
 
-    session = DPRSession(question)
+    if not question:
+        return jsonify({"status": "error", "error": "question is required"}), 400
 
-    return jsonify({"status": "started"})
+    try:
+        session = DPRSession(question, selected_models=models)
+    except ValueError as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+    return jsonify({
+        "status": "started",
+        "agents": session.agents
+    })
+
+
+@app.route("/models", methods=["GET"])
+def models():
+    return jsonify({
+        "models": AVAILABLE_MODELS,
+        "default_models": DEFAULT_AGENT_MODELS
+    })
 
 
 @app.route("/step", methods=["POST"])

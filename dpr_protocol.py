@@ -15,11 +15,22 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
-AGENTS = [
-    {"name": "Agent 1", "model": "llama-3.3-70b-versatile"},
-    {"name": "Agent 2", "model": "openai/gpt-oss-120b"},
-    {"name": "Agent 3", "model": "moonshotai/kimi-k2-instruct"},
-    {"name": "Agent 4", "model": "openai/gpt-oss-20b"},
+AVAILABLE_MODELS = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "groq/compound-mini",
+    "openai/gpt-oss-safeguard-20b",
+    "qwen/qwen3-32b",
+    "moonshotai/kimi-k2-instruct",
+]
+
+DEFAULT_AGENT_MODELS = [
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
+    "moonshotai/kimi-k2-instruct",
+    "openai/gpt-oss-20b",
 ]
 
 MAX_TURNS = 60
@@ -82,7 +93,20 @@ def call_model(model, messages, max_tokens=None, temperature=0.6):
 
 
 class DPRSession:
-    def __init__(self, question):
+    def __init__(self, question, selected_models=None):
+        selected_models = selected_models or list(DEFAULT_AGENT_MODELS)
+        if len(selected_models) < 2:
+            raise ValueError("Select at least 2 models to start a session.")
+
+        invalid = [m for m in selected_models if m not in AVAILABLE_MODELS]
+        if invalid:
+            raise ValueError(f"Unsupported model(s): {', '.join(invalid)}")
+
+        self.agents = [
+            {"name": f"Agent {idx + 1}", "model": model}
+            for idx, model in enumerate(selected_models)
+        ]
+
         self.question = question
         self.turn = 0
 
@@ -94,9 +118,9 @@ class DPRSession:
         self.pending_human_instruction = None
         self.pending_redirect = None
 
-        self.quotas = {a["name"]: STARTING_QUOTA for a in AGENTS}
+        self.quotas = {a["name"]: STARTING_QUOTA for a in self.agents}
 
-        self.last_spoke = {a["name"]: -1 for a in AGENTS}
+        self.last_spoke = {a["name"]: -1 for a in self.agents}
 
         self.hand_queue = deque()
         self.human_hand_raised = False
@@ -121,13 +145,13 @@ class DPRSession:
         self.last_context_snapshot = ""
 
     def _agent_index(self, agent_name):
-        return next(i for i, a in enumerate(AGENTS) if a["name"] == agent_name)
+        return next(i for i, a in enumerate(self.agents) if a["name"] == agent_name)
 
     def _token_distance(self, agent_name):
         if agent_name == HUMAN_NAME:
             return -1
         idx = self._agent_index(agent_name)
-        return (idx - self.current_index) % len(AGENTS)
+        return (idx - self.current_index) % len(self.agents)
 
     def _push_facilitator_event(self, kind, message):
         self.facilitator_log.append({
@@ -635,7 +659,7 @@ Instructions:
                 self.hand_queue.append(agent)
 
     def enqueue_interrupts(self, speaker):
-        for a in AGENTS:
+        for a in self.agents:
             agent = a["name"]
             if agent == speaker or self.quotas[agent] <= 0:
                 continue
@@ -650,7 +674,7 @@ Instructions:
     # --------------------------------------------
 
     def select_next_agent(self):
-        live_agents = [a["name"] for a in AGENTS if self.quotas[a["name"]] > 0]
+        live_agents = [a["name"] for a in self.agents if self.quotas[a["name"]] > 0]
         if not live_agents and not self.human_hand_raised:
             return None
 
@@ -667,7 +691,7 @@ Instructions:
                 "anti_starvation",
                 f"Prioritized {chosen} due to starvation protection.",
             )
-            self.current_index = (self._agent_index(chosen) + 1) % len(AGENTS)
+            self.current_index = (self._agent_index(chosen) + 1) % len(self.agents)
             return chosen
 
         if self.hand_queue:
@@ -680,15 +704,15 @@ Instructions:
                 if agent == HUMAN_NAME:
                     self.human_hand_raised = False
                     return HUMAN_NAME
-                self.current_index = (self._agent_index(agent) + 1) % len(AGENTS)
+                self.current_index = (self._agent_index(agent) + 1) % len(self.agents)
                 return agent
 
-        for i in range(len(AGENTS)):
-            idx = (self.current_index + i) % len(AGENTS)
-            agent = AGENTS[idx]["name"]
+        for i in range(len(self.agents)):
+            idx = (self.current_index + i) % len(self.agents)
+            agent = self.agents[idx]["name"]
 
             if self.quotas[agent] > 0:
-                self.current_index = (idx + 1) % len(AGENTS)
+                self.current_index = (idx + 1) % len(self.agents)
                 return agent
 
         return None
@@ -702,6 +726,7 @@ Instructions:
             return {
                 "status": "done",
                 "agent": HUMAN_NAME,
+                "agent_model": None,
                 "text": "Reasoning stopped by human.",
                 "round": self.turn,
                 **self._state_payload(),
@@ -714,6 +739,7 @@ Instructions:
             return {
                 "status": "awaiting_human_finalization",
                 "agent": HUMAN_NAME,
+                "agent_model": None,
                 "text": "Completion candidate raised. Human approval required.",
                 "round": self.turn,
                 "finalization_candidate": self.finalization_candidate,
@@ -724,6 +750,7 @@ Instructions:
             return {
                 "status": "done",
                 "agent": "System",
+                "agent_model": None,
                 "text": "Session ended: max turns reached.",
                 "round": self.turn,
                 **self._state_payload(),
@@ -735,6 +762,7 @@ Instructions:
             return {
                 "status": "done",
                 "agent": "System",
+                "agent_model": None,
                 "text": "All agents exhausted quotas.",
                 "round": self.turn,
                 **self._state_payload(),
@@ -745,13 +773,14 @@ Instructions:
             return {
                 "status": "awaiting_human_turn",
                 "agent": HUMAN_NAME,
+                "agent_model": None,
                 "text": "Human turn selected. Please submit your reasoning.",
                 "round": self.turn,
                 "queued_interrupts": list(self.hand_queue),
                 **self._state_payload(),
             }
 
-        model = next(a["model"] for a in AGENTS if a["name"] == agent_name)
+        model = next(a["model"] for a in self.agents if a["name"] == agent_name)
 
         context = self.build_context(agent_name)
 
@@ -760,7 +789,96 @@ Instructions:
             {"role": "user", "content": "Continue the reasoning."},
         ]
 
-        answer = call_model(model, messages, max_tokens=None)
+        try:
+            answer = call_model(model, messages, max_tokens=None)
+        except requests.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            reason = f"model_http_error_{status_code}"
+            self._push_facilitator_event(
+                "model_error",
+                f"Skipped {agent_name} due to model HTTP error {status_code}.",
+            )
+            self.ignored_responses.append({
+                "turn": self.turn,
+                "agent": agent_name,
+                "reason": reason,
+                "text": str(e),
+            })
+
+            # Consume this agent's turn and move on, instead of failing the whole session.
+            self.quotas[agent_name] -= 1
+            self.turn += 1
+
+            return {
+                "status": "ok",
+                "agent": agent_name,
+                "agent_model": model,
+                "text": f"Skipped due to model API error ({status_code}).",
+                "round": self.turn,
+                "ignored": True,
+                "ignored_reason": reason,
+                "quota_left": self.quotas[agent_name],
+                "queued_interrupts": list(self.hand_queue),
+                **self._state_payload(),
+            }
+        except Exception as e:
+            reason = "model_runtime_error"
+            self._push_facilitator_event(
+                "model_error",
+                f"Skipped {agent_name} due to runtime model error: {str(e)}",
+            )
+            self.ignored_responses.append({
+                "turn": self.turn,
+                "agent": agent_name,
+                "reason": reason,
+                "text": str(e),
+            })
+
+            # Consume this agent's turn and move on, instead of failing the whole session.
+            self.quotas[agent_name] -= 1
+            self.turn += 1
+
+            return {
+                "status": "ok",
+                "agent": agent_name,
+                "agent_model": model,
+                "text": "Skipped due to model runtime error.",
+                "round": self.turn,
+                "ignored": True,
+                "ignored_reason": reason,
+                "quota_left": self.quotas[agent_name],
+                "queued_interrupts": list(self.hand_queue),
+                **self._state_payload(),
+            }
+
+        # If a human control command arrived while this model call was in-flight,
+        # do not emit/process the model output.
+        if self.stopped_by_human:
+            return {
+                "status": "done",
+                "agent": HUMAN_NAME,
+                "agent_model": None,
+                "text": "Reasoning stopped by human.",
+                "round": self.turn,
+                **self._state_payload(),
+            }
+
+        if self.paused:
+            return {
+                "status": "paused",
+                **self._state_payload(),
+            }
+
+        if self.awaiting_human_finalization:
+            return {
+                "status": "awaiting_human_finalization",
+                "agent": HUMAN_NAME,
+                "agent_model": None,
+                "text": "Completion candidate raised. Human approval required.",
+                "round": self.turn,
+                "finalization_candidate": self.finalization_candidate,
+                **self._state_payload(),
+            }
 
         if self.pending_redirect and self.pending_redirect["remaining"] > 0:
             self.pending_redirect["remaining"] -= 1
@@ -779,7 +897,7 @@ Instructions:
 
         alternatives = [
             a["name"]
-            for a in AGENTS
+            for a in self.agents
             if a["name"] != agent_name and self.quotas[a["name"]] > 0
         ]
         if self.last_speaker == agent_name and self.repeat_streak >= MAX_REPEAT_STREAK and alternatives:
@@ -813,11 +931,13 @@ Instructions:
             self.awaiting_human_finalization = True
             self.finalization_candidate = {
                 "agent": agent_name,
+                "model": model,
                 "text": answer,
             }
             return {
                 "status": "awaiting_human_finalization",
                 "agent": HUMAN_NAME,
+                "agent_model": None,
                 "text": "Completion candidate raised. Human approval required.",
                 "round": self.turn,
                 "finalization_candidate": self.finalization_candidate,
@@ -841,6 +961,7 @@ Instructions:
         return {
             "status": "ok",
             "agent": agent_name,
+            "agent_model": model,
             "text": answer,
             "round": self.turn,
             "ignored": bool(ignored_reason),
@@ -988,6 +1109,7 @@ Instructions:
         return {
             "status": "done",
             "agent": candidate["agent"],
+            "agent_model": candidate.get("model"),
             "text": candidate["text"],
             "round": self.turn,
             **self._state_payload(),
@@ -1015,6 +1137,7 @@ Instructions:
         return {
             "status": "ok",
             "agent": HUMAN_NAME,
+            "agent_model": None,
             "text": "Human requested continuation.",
             "round": self.turn,
             **self._state_payload(),

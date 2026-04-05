@@ -8,7 +8,25 @@
 </head>
 
 <body>
+    <button class="models-toggle" onclick="toggleModelsDrawer()">Models</button>
     <button class="memory-toggle" onclick="toggleMemoryDrawer()">Memory</button>
+
+    <aside id="models-drawer" class="models-drawer">
+        <div class="memory-header">
+            <h2>Agent Models</h2>
+            <button class="btn btn-muted" onclick="toggleModelsDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <p id="model-count" class="models-meta">Select at least 2 models.</p>
+            <div class="models-actions">
+                <label class="select-all-row">
+                    <input id="select-all-models" type="checkbox" onchange="toggleSelectAll(this.checked)">
+                    <span>Select All Models</span>
+                </label>
+            </div>
+            <div id="models-list" class="models-list"></div>
+        </div>
+    </aside>
 
     <aside id="memory-drawer" class="memory-drawer">
         <div class="memory-header">
@@ -57,12 +75,12 @@
             <span id="command-label" class="command-label"></span>
             <input id="command-input" placeholder="Enter command message...">
             <input id="redirect-turns" type="number" min="1" value="3" class="hidden" title="Redirect turns">
-            <button class="btn" onclick="submitCommand()">Send</button>
+            <button id="command-send-btn" class="btn" onclick="submitCommand()" disabled>Send</button>
         </div>
 
         <div class="input-bar">
             <textarea id="question" placeholder="Ask something..."></textarea>
-            <button id="start-btn" class="btn" onclick="start()">Start</button>
+            <button id="start-btn" class="btn" onclick="start()" disabled>Start</button>
         </div>
     </div>
 
