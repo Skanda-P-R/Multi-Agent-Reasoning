@@ -1,5 +1,12 @@
 from flask import Flask, render_template, request, jsonify
-from dpr_protocol import DPRSession, AVAILABLE_MODELS, DEFAULT_AGENT_MODELS
+from dpr_protocol import (
+    DPRSession,
+    AVAILABLE_MODELS,
+    DEFAULT_AGENT_MODELS,
+    DEFAULT_SECTION,
+    SECTION_HEADERS,
+    suggest_models_for_question,
+)
 
 app = Flask(__name__)
 
@@ -42,9 +49,26 @@ def start():
 
 @app.route("/models", methods=["GET"])
 def models():
+    default_models = [{"model": m, "section": DEFAULT_SECTION} for m in DEFAULT_AGENT_MODELS]
     return jsonify({
         "models": AVAILABLE_MODELS,
-        "default_models": DEFAULT_AGENT_MODELS
+        "default_models": default_models,
+        "sections": list(SECTION_HEADERS.keys()),
+        "default_section": DEFAULT_SECTION,
+    })
+
+
+@app.route("/suggest_models", methods=["POST"])
+def suggest_models():
+    payload = request.json or {}
+    question = (payload.get("question") or "").strip()
+    if not question:
+        return jsonify({"status": "error", "error": "question is required"}), 400
+
+    suggestion = suggest_models_for_question(question)
+    return jsonify({
+        "status": "ok",
+        "suggestion": suggestion,
     })
 
 
@@ -83,6 +107,21 @@ def resume():
 
     session.resume()
     return jsonify({"status": "resumed"})
+
+
+@app.route("/set_models", methods=["POST"])
+def set_models():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    models = (request.json or {}).get("models") or []
+    try:
+        agents = session.update_agents(models)
+    except (RuntimeError, ValueError) as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+    return jsonify({"status": "ok", "agents": agents})
 
 
 @app.route("/stop", methods=["POST"])

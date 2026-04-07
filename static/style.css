@@ -82,6 +82,38 @@ body {
     background: #fffefb;
 }
 
+.suggestion-box {
+    margin: 10px 14px 0;
+    padding: 12px;
+    border: 1px solid #dcc1a3;
+    border-radius: 12px;
+    background: #fff6eb;
+}
+
+.suggestion-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #5f452e;
+    margin-bottom: 8px;
+}
+
+.suggestion-text {
+    white-space: pre-wrap;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #4a3827;
+    background: #fff;
+    border: 1px solid #e5ceb4;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.suggestion-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
 .message {
     display: flex;
 }
@@ -266,6 +298,11 @@ button:hover {
     border-bottom: 1px solid #e4cfb8;
 }
 
+.drawer-actions {
+    display: flex;
+    gap: 8px;
+}
+
 .memory-header h2 {
     margin: 0;
     font-size: 16px;
@@ -333,9 +370,9 @@ button:hover {
 
 .model-item {
     display: flex;
-    gap: 10px;
-    align-items: center;
-    justify-content: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
     padding: 8px 10px;
     border: 1px solid #e2ccb2;
     border-radius: 10px;
@@ -344,20 +381,64 @@ button:hover {
     color: #3f3228;
     text-align: left;
     direction: ltr;
-    cursor: pointer;
     backdrop-filter: none;
 }
 
-.model-item input[type="checkbox"] {
+.model-main-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.model-main-row input[type="checkbox"] {
     margin: 0;
     flex: 0 0 auto;
 }
 
-.model-item span {
+.model-main-row span {
     flex: 1 1 auto;
     text-align: left;
     line-height: 1.35;
     word-break: break-word;
+}
+
+.model-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-left: 26px;
+}
+
+.section-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.section-select {
+    flex: 1 1 auto;
+    min-width: 130px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid #dcc1a3;
+    background: #fff8f0;
+    color: #4a3826;
+    font-size: 12px;
+}
+
+.section-select:disabled {
+    opacity: 0.55;
+}
+
+.section-add-btn,
+.section-remove-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.section-add-btn {
+    align-self: flex-start;
+    width: auto;
 }
 
 #start-btn:disabled {

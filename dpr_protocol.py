@@ -33,6 +33,14 @@ DEFAULT_AGENT_MODELS = [
     "openai/gpt-oss-20b",
 ]
 
+SECTION_HEADERS = {
+    "general": "You are answering with a general problem-solving focus.",
+    "education": "You are answering with an education-focused perspective (clarity, pedagogy, learning outcomes).",
+    "programming": "You are answering with a programming-focused perspective (implementation, architecture, code quality).",
+    "research": "You are answering with a research/analysis perspective (evidence, tradeoffs, rigor).",
+}
+DEFAULT_SECTION = "general"
+
 MAX_TURNS = 60
 STARTING_QUOTA = 8
 REDIRECT_DURATION_TURNS = 3
@@ -65,6 +73,246 @@ DECISION_START_VERBS = {
 }
 
 
+def _extract_json_object_loose(raw_text):
+    cleaned = (raw_text or "").strip()
+    if not cleaned:
+        return None
+
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z0-9_-]*", "", cleaned).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+
+    code_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
+    if code_match:
+        try:
+            parsed = json.loads(code_match.group(1))
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    candidate = cleaned[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        return None
+
+    return None
+
+
+def _heuristic_suggest_models_for_question(question):
+    q = (question or "").lower()
+
+    programming_hits = any(
+        k in q for k in [
+            "code", "program", "algorithm", "bug", "debug", "python", "java",
+            "javascript", "api", "database", "backend", "frontend", "software",
+        ]
+    )
+    education_hits = any(
+        k in q for k in [
+            "teach", "education", "student", "curriculum", "lesson",
+            "learning", "classroom", "school", "exam",
+        ]
+    )
+
+    if programming_hits and not education_hits:
+        section = "programming"
+        model_order = [
+            "qwen/qwen3-32b",
+            "openai/gpt-oss-120b",
+            "llama-3.3-70b-versatile",
+            "moonshotai/kimi-k2-instruct",
+        ]
+    elif education_hits and not programming_hits:
+        section = "education"
+        model_order = [
+            "llama-3.3-70b-versatile",
+            "moonshotai/kimi-k2-instruct",
+            "openai/gpt-oss-20b",
+            "llama-3.1-8b-instant",
+        ]
+    else:
+        section = "general"
+        model_order = list(DEFAULT_AGENT_MODELS)
+
+    chosen = []
+    seen = set()
+    for model in model_order:
+        if model in AVAILABLE_MODELS and model not in seen:
+            chosen.append({"model": model, "section": section})
+            seen.add(model)
+        if len(chosen) >= 4:
+            break
+
+    if len(chosen) < 2:
+        for model in AVAILABLE_MODELS:
+            if model not in seen:
+                chosen.append({"model": model, "section": section})
+                seen.add(model)
+            if len(chosen) >= 2:
+                break
+
+    return {
+        "section": section,
+        "models": chosen,
+        "_selector_meta": {
+            "source": "heuristic",
+            "reason": "keyword_fallback",
+            "raw_output": None,
+        },
+    }
+
+
+def _call_selector_model_json(question, retry=False):
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("Missing GROQ_API_KEY environment variable.")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    schema_hint = {
+        "section": "general|education|programming|research",
+        "models": [{"model": "<allowed model>", "section": "general|education|programming|research"}],
+    }
+
+    system_prompt = (
+        "You are ONLY a model-router. "
+        "Do NOT answer the user's question content. "
+        "Return ONLY one JSON object with keys: section, models. "
+        "No markdown. No prose."
+    )
+    if retry:
+        system_prompt += " PRIOR ATTEMPT FAILED. STRICT JSON OBJECT ONLY."
+
+    user_prompt = (
+        "Select a panel for multi-agent discussion.\n"
+        f"Allowed models: {json.dumps(AVAILABLE_MODELS)}\n"
+        f"Allowed sections: {json.dumps(list(SECTION_HEADERS.keys()))}\n"
+        "Rules: choose a dynamic number of panelists based on task complexity "
+        "(min 2, max 12). You MAY reuse the same model in different sections if useful. "
+        "Avoid exact duplicate entries of the same model+section. "
+        "Use mixed sections for multi-domain questions.\n"
+        f"Question: {question}\n"
+        f"Output schema: {json.dumps(schema_hint)}"
+    )
+
+    payload = {
+        "model": MEMORY_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0,
+        "max_tokens": 420,
+        "response_format": {"type": "json_object"},
+    }
+
+    r = requests.post(API_URL, headers=headers, json=payload)
+    r.raise_for_status()
+    msg = r.json()["choices"][0]["message"]
+    return msg.get("content", "")
+
+
+def suggest_models_for_question(question):
+    question = (question or "").strip()
+    if not question:
+        return _heuristic_suggest_models_for_question(question)
+
+    try:
+        raw = _call_selector_model_json(question, retry=False)
+        parsed = _extract_json_object_loose(raw)
+        if not isinstance(parsed, dict):
+            raw_retry = _call_selector_model_json(question, retry=True)
+            raw = raw_retry
+            parsed = _extract_json_object_loose(raw_retry)
+            if not isinstance(parsed, dict):
+                fallback = _heuristic_suggest_models_for_question(question)
+                fallback["_selector_meta"] = {
+                    "source": "heuristic",
+                    "reason": "llm_parse_failed",
+                    "raw_output": raw,
+                }
+                return fallback
+
+        primary_section = str(parsed.get("section", DEFAULT_SECTION)).strip().lower() or DEFAULT_SECTION
+        if primary_section not in SECTION_HEADERS:
+            primary_section = DEFAULT_SECTION
+
+        raw_models = parsed.get("models", [])
+        if not isinstance(raw_models, list):
+            fallback = _heuristic_suggest_models_for_question(question)
+            fallback["_selector_meta"] = {
+                "source": "heuristic",
+                "reason": "llm_invalid_schema",
+                "raw_output": raw,
+            }
+            return fallback
+
+        chosen = []
+        seen_pairs = set()
+        for item in raw_models:
+            if not isinstance(item, dict):
+                continue
+            model = str(item.get("model", "")).strip()
+            section = str(item.get("section", primary_section)).strip().lower() or primary_section
+            if model not in AVAILABLE_MODELS:
+                continue
+            if section not in SECTION_HEADERS:
+                section = primary_section
+            pair = (model, section)
+            if pair in seen_pairs:
+                continue
+            chosen.append({"model": model, "section": section})
+            seen_pairs.add(pair)
+            if len(chosen) >= 12:
+                break
+
+        if len(chosen) < 2:
+            fallback = _heuristic_suggest_models_for_question(question)
+            fallback["_selector_meta"] = {
+                "source": "heuristic",
+                "reason": "llm_insufficient_models",
+                "raw_output": raw,
+            }
+            return fallback
+
+        return {
+            "section": primary_section,
+            "models": chosen,
+            "_selector_meta": {
+                "source": "llm",
+                "reason": "ok",
+                "raw_output": raw,
+            },
+        }
+    except Exception as e:
+        fallback = _heuristic_suggest_models_for_question(question)
+        fallback["_selector_meta"] = {
+            "source": "heuristic",
+            "reason": f"llm_exception: {str(e)}",
+            "raw_output": None,
+        }
+        return fallback
+
+
 def call_model(model, messages, max_tokens=None, temperature=0.6):
     api_key = os.getenv("GROQ_API_KEY", "").strip()
 
@@ -93,18 +341,37 @@ def call_model(model, messages, max_tokens=None, temperature=0.6):
 
 
 class DPRSession:
-    def __init__(self, question, selected_models=None):
+    @staticmethod
+    def _normalize_selected_models(selected_models):
         selected_models = selected_models or list(DEFAULT_AGENT_MODELS)
         if len(selected_models) < 2:
             raise ValueError("Select at least 2 models to start a session.")
 
-        invalid = [m for m in selected_models if m not in AVAILABLE_MODELS]
+        normalized = []
+        for item in selected_models:
+            if isinstance(item, str):
+                normalized.append({"model": item, "section": DEFAULT_SECTION})
+            elif isinstance(item, dict):
+                model = str(item.get("model", "")).strip()
+                section = str(item.get("section", DEFAULT_SECTION)).strip().lower() or DEFAULT_SECTION
+                if section not in SECTION_HEADERS:
+                    section = DEFAULT_SECTION
+                normalized.append({"model": model, "section": section})
+            else:
+                raise ValueError("Invalid model selection payload.")
+
+        invalid = [m["model"] for m in normalized if m["model"] not in AVAILABLE_MODELS]
         if invalid:
             raise ValueError(f"Unsupported model(s): {', '.join(invalid)}")
 
+        return normalized
+
+    def __init__(self, question, selected_models=None):
+        normalized = self._normalize_selected_models(selected_models)
+
         self.agents = [
-            {"name": f"Agent {idx + 1}", "model": model}
-            for idx, model in enumerate(selected_models)
+            {"name": f"Agent {idx + 1}", "model": item["model"], "section": item["section"]}
+            for idx, item in enumerate(normalized)
         ]
 
         self.question = question
@@ -143,6 +410,43 @@ class DPRSession:
             "changelog": [],
         }
         self.last_context_snapshot = ""
+
+    def update_agents(self, selected_models):
+        if not self.paused:
+            raise RuntimeError("Pause the session before updating models.")
+
+        normalized = self._normalize_selected_models(selected_models)
+
+        old_quota_by_pair = {
+            (a["model"], a.get("section", DEFAULT_SECTION)): self.quotas.get(a["name"], STARTING_QUOTA)
+            for a in self.agents
+        }
+        old_last_spoke_by_pair = {
+            (a["model"], a.get("section", DEFAULT_SECTION)): self.last_spoke.get(a["name"], -1)
+            for a in self.agents
+        }
+
+        self.agents = [
+            {"name": f"Agent {idx + 1}", "model": item["model"], "section": item["section"]}
+            for idx, item in enumerate(normalized)
+        ]
+        self.quotas = {
+            a["name"]: old_quota_by_pair.get((a["model"], a["section"]), STARTING_QUOTA)
+            for a in self.agents
+        }
+        self.last_spoke = {
+            a["name"]: old_last_spoke_by_pair.get((a["model"], a["section"]), -1)
+            for a in self.agents
+        }
+
+        valid_names = {a["name"] for a in self.agents}
+        self.hand_queue = deque([x for x in self.hand_queue if x == HUMAN_NAME or x in valid_names])
+        self.current_index = 0 if not self.agents else (self.current_index % len(self.agents))
+        if self.last_speaker not in valid_names and self.last_speaker != HUMAN_NAME:
+            self.last_speaker = None
+            self.repeat_streak = 0
+
+        return list(self.agents)
 
     def _agent_index(self, agent_name):
         return next(i for i, a in enumerate(self.agents) if a["name"] == agent_name)
@@ -590,6 +894,12 @@ Latest turn text:
     # --------------------------------------------
 
     def build_context(self, agent_name):
+        agent_section = next(
+            (a.get("section", DEFAULT_SECTION) for a in self.agents if a["name"] == agent_name),
+            DEFAULT_SECTION,
+        )
+        section_header = SECTION_HEADERS.get(agent_section, SECTION_HEADERS[DEFAULT_SECTION])
+
         memory_block = self._memory_snapshot_text()
 
         accepted = [r for r in self.responses if r.get("accepted")]
@@ -622,6 +932,7 @@ You MUST keep your response aligned to this redirection.
 
         context = f"""
 You are {agent_name} in a distributed reasoning protocol.
+{section_header}
 
 Original problem:
 {self.question}

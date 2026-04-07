@@ -14,7 +14,10 @@
     <aside id="models-drawer" class="models-drawer">
         <div class="memory-header">
             <h2>Agent Models</h2>
-            <button class="btn btn-muted" onclick="toggleModelsDrawer()">Close</button>
+            <div class="drawer-actions">
+                <button class="btn btn-muted" onclick="applyModelSelection()">Select Models</button>
+                <button class="btn btn-muted" onclick="closeModelsDrawer()">Close</button>
+            </div>
         </div>
         <div class="memory-content">
             <p id="model-count" class="models-meta">Select at least 2 models.</p>
@@ -50,6 +53,15 @@
         </header>
 
         <div id="chat" class="chat"></div>
+
+        <div id="suggestion-box" class="suggestion-box hidden">
+            <div class="suggestion-title">Suggested Agent Selection</div>
+            <div id="suggestion-text" class="suggestion-text"></div>
+            <div class="suggestion-actions">
+                <button class="btn btn-muted" onclick="approveSuggestedModels()">Approve Suggested</button>
+                <button class="btn btn-muted" onclick="useManualSelection()">Edit Manually</button>
+            </div>
+        </div>
 
         <div class="control-panel">
             <button class="btn btn-muted" onclick="pause()">Pause</button>

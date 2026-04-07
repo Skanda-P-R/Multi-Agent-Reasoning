@@ -3,8 +3,16 @@ const STEP_DELAY_MS = 500
 let running = false
 let paused = false
 let commandType = null
-let selectedModels = []
 let availableModels = []
+let availableSections = []
+let defaultSection = "general"
+let modelSectionMap = {}
+let appliedModelConfigs = []
+let pendingSuggestion = null
+let suggestionApproved = false
+let manualSelectionChosen = false
+let suggestedQuestion = ""
+let approvedSuggestedModels = null
 let agentModelMap = {}
 let agentColorMap = {}
 let loopEpoch = 0
@@ -20,6 +28,9 @@ const modelCount = document.getElementById("model-count")
 const memoryDrawer = document.getElementById("memory-drawer")
 const memoryView = document.getElementById("memory-view")
 const contextView = document.getElementById("context-view")
+const questionInput = document.getElementById("question")
+const suggestionBox = document.getElementById("suggestion-box")
+const suggestionText = document.getElementById("suggestion-text")
 
 function scrollBottom() {
     chat.scrollTop = chat.scrollHeight
@@ -39,9 +50,12 @@ function truncateForDrawer(text, limit = 260) {
 }
 
 function formatAgentHeading(agent, agentModel) {
-    const model = agentModel || agentModelMap[agent]
-    if (!model) return `**${agent}**`
-    return `**${agent}** \`${model}\``
+    const info = agentModel || agentModelMap[agent]
+    if (!info) return `**${agent}**`
+    if (typeof info === "string") return `**${agent}** \`${info}\``
+    const model = info.model || ""
+    const section = info.section || defaultSection
+    return `**${agent}** \`${model}\` _(${section})_`
 }
 
 function generateAgentBubble(index, total) {
@@ -57,7 +71,7 @@ function setupAgentStyling(agents) {
     if (!Array.isArray(agents)) return
     const total = agents.length
     agents.forEach((a, idx) => {
-        agentModelMap[a.name] = a.model
+        agentModelMap[a.name] = { model: a.model, section: a.section || defaultSection }
         agentColorMap[a.name] = generateAgentBubble(idx, total)
     })
 }
@@ -101,58 +115,223 @@ function toggleMemoryDrawer() {
 }
 
 function toggleModelsDrawer() {
-    modelsDrawer.classList.toggle("open")
+    if (modelsDrawer.classList.contains("open")) {
+        closeModelsDrawer()
+        return
+    }
+    setDraftFromConfigs(appliedModelConfigs)
+    modelsDrawer.classList.add("open")
+}
+
+function closeModelsDrawer() {
+    setDraftFromConfigs(appliedModelConfigs)
+    modelsDrawer.classList.remove("open")
+}
+
+function cloneConfigs(configs) {
+    return (configs || []).map((c) => ({ model: c.model, section: c.section }))
+}
+
+function setDraftFromConfigs(configs) {
+    modelSectionMap = {}
+    for (const model of availableModels) modelSectionMap[model] = []
+    for (const item of configs || []) {
+        if (!item || !availableModels.includes(item.model)) continue
+        const existing = Array.isArray(modelSectionMap[item.model]) ? modelSectionMap[item.model] : []
+        setModelSections(item.model, [...existing, item.section || defaultSection])
+    }
+    renderModelSelector()
+}
+
+function getAppliedModelConfigs() {
+    if (Array.isArray(appliedModelConfigs) && appliedModelConfigs.length) {
+        return cloneConfigs(appliedModelConfigs)
+    }
+    return getSelectedModelConfigs()
 }
 
 function updateStartButtonState() {
-    startBtn.disabled = selectedModels.length < 2
+    startBtn.disabled = getAppliedModelConfigs().length < 2
 }
 
 function renderModelSelector() {
+    const sectionOptions = availableSections.map((section) => (
+        `<option value="${escapeHtml(section)}">${escapeHtml(section)}</option>`
+    )).join("")
+
     const html = availableModels.map((model) => {
-        const checked = selectedModels.includes(model) ? "checked" : ""
+        const sections = Array.isArray(modelSectionMap[model]) ? modelSectionMap[model] : []
+        const checked = sections.length > 0 ? "checked" : ""
+        const modelEscaped = model.replaceAll("'", "\\'")
+        const sectionRows = sections.map((section, idx) => `
+            <div class="section-row">
+                <select class="section-select" onchange="updateModelSection('${modelEscaped}', ${idx}, this.value)">
+                    ${sectionOptions}
+                </select>
+                <button type="button" class="btn btn-muted section-remove-btn" onclick="removeModelSection('${modelEscaped}', ${idx})">Remove</button>
+            </div>
+        `).join("")
         return `
-        <label class="model-item">
-            <input type="checkbox" value="${escapeHtml(model)}" ${checked} onchange="toggleModel('${model.replaceAll("'", "\\'")}')">
-            <span>${escapeHtml(model)}</span>
-        </label>
+        <div class="model-item">
+            <div class="model-main-row">
+                <input type="checkbox" value="${escapeHtml(model)}" ${checked} onchange="toggleModel('${modelEscaped}')">
+                <span>${escapeHtml(model)}</span>
+            </div>
+            ${sections.length ? `
+            <div class="model-sections">
+                ${sectionRows}
+                <button type="button" class="btn btn-muted section-add-btn" onclick="addModelSection('${modelEscaped}')">Add Section</button>
+            </div>
+            ` : ""}
+        </div>
         `
     }).join("")
 
     modelsList.innerHTML = html
-    modelCount.textContent = `${selectedModels.length} selected (minimum 2 required)`
+    for (const row of modelsList.querySelectorAll(".model-item")) {
+        const checkbox = row.querySelector("input[type='checkbox']")
+        if (!checkbox) continue
+        const model = checkbox.value
+        const sections = Array.isArray(modelSectionMap[model]) ? modelSectionMap[model] : []
+        const selects = row.querySelectorAll(".section-select")
+        selects.forEach((select, idx) => {
+            select.value = sections[idx] || defaultSection
+        })
+    }
+
+    const selectedEntries = getSelectedModelConfigs().length
+    const selectedModels = availableModels.filter((m) => (modelSectionMap[m] || []).length > 0).length
+    modelCount.textContent = `${selectedEntries} agents selected across ${selectedModels} models (minimum 2 required)`
     const selectAllBox = document.getElementById("select-all-models")
     if (selectAllBox) {
-        selectAllBox.checked = availableModels.length > 0 && selectedModels.length === availableModels.length
+        selectAllBox.checked = availableModels.length > 0 && selectedModels === availableModels.length
     }
     updateStartButtonState()
 }
 
-function toggleModel(model) {
-    if (selectedModels.includes(model)) {
-        selectedModels = selectedModels.filter((m) => m !== model)
-    } else {
-        selectedModels.push(model)
+function normalizeSection(section) {
+    return availableSections.includes(section) ? section : defaultSection
+}
+
+function dedupeSections(sections) {
+    const out = []
+    for (const s of sections || []) {
+        const section = normalizeSection(s)
+        if (!out.includes(section)) out.push(section)
     }
+    return out
+}
+
+function setModelSections(model, sections) {
+    modelSectionMap[model] = dedupeSections(sections)
+}
+
+function toggleModel(model) {
+    const existing = Array.isArray(modelSectionMap[model]) ? modelSectionMap[model] : []
+    if (existing.length > 0) {
+        setModelSections(model, [])
+    } else {
+        setModelSections(model, [defaultSection])
+    }
+    suggestionApproved = false
+    approvedSuggestedModels = null
+    if (pendingSuggestion) manualSelectionChosen = true
     renderModelSelector()
 }
 
 function toggleSelectAll(checked) {
     if (checked) {
-        selectedModels = [...availableModels]
+        for (const model of availableModels) {
+            setModelSections(model, [defaultSection])
+        }
     } else {
-        selectedModels = []
+        for (const model of availableModels) {
+            setModelSections(model, [])
+        }
     }
+    suggestionApproved = false
+    approvedSuggestedModels = null
+    if (pendingSuggestion) manualSelectionChosen = true
     renderModelSelector()
+}
+
+function addModelSection(model) {
+    const existing = Array.isArray(modelSectionMap[model]) ? modelSectionMap[model] : []
+    const sectionToAdd = availableSections.find((s) => !existing.includes(s)) || defaultSection
+    setModelSections(model, [...existing, sectionToAdd])
+    suggestionApproved = false
+    approvedSuggestedModels = null
+    if (pendingSuggestion) manualSelectionChosen = true
+    renderModelSelector()
+}
+
+function updateModelSection(model, index, section) {
+    const existing = Array.isArray(modelSectionMap[model]) ? [...modelSectionMap[model]] : []
+    if (index < 0 || index >= existing.length) return
+    existing[index] = normalizeSection(section)
+    setModelSections(model, existing)
+    suggestionApproved = false
+    approvedSuggestedModels = null
+    if (pendingSuggestion) manualSelectionChosen = true
+    renderModelSelector()
+}
+
+function removeModelSection(model, index) {
+    const existing = Array.isArray(modelSectionMap[model]) ? [...modelSectionMap[model]] : []
+    if (index < 0 || index >= existing.length) return
+    existing.splice(index, 1)
+    setModelSections(model, existing)
+    suggestionApproved = false
+    approvedSuggestedModels = null
+    if (pendingSuggestion) manualSelectionChosen = true
+    renderModelSelector()
+}
+
+function getSelectedModelConfigs() {
+    const configs = []
+    for (const model of availableModels) {
+        const sections = Array.isArray(modelSectionMap[model]) ? modelSectionMap[model] : []
+        for (const section of sections) {
+            configs.push({
+                model,
+                section: normalizeSection(section)
+            })
+        }
+    }
+    return configs
 }
 
 async function loadModels() {
     const res = await fetch("/models")
     const data = await res.json()
     availableModels = Array.isArray(data.models) ? data.models : []
+    availableSections = Array.isArray(data.sections) && data.sections.length ? data.sections : ["general"]
+    defaultSection = data.default_section || availableSections[0] || "general"
+
+    modelSectionMap = {}
+    for (const model of availableModels) modelSectionMap[model] = []
+
     const defaults = Array.isArray(data.default_models) ? data.default_models : []
-    const validDefaults = defaults.filter((m) => availableModels.includes(m))
-    selectedModels = validDefaults.length ? validDefaults : availableModels.slice(0, 4)
+    const normalizedDefaults = defaults.map((item) => {
+        if (typeof item === "string") return { model: item, section: defaultSection }
+        return {
+            model: item.model,
+            section: item.section || defaultSection
+        }
+    }).filter((item) => item.model && availableModels.includes(item.model))
+
+    for (const item of normalizedDefaults) {
+        const existing = Array.isArray(modelSectionMap[item.model]) ? modelSectionMap[item.model] : []
+        setModelSections(item.model, [...existing, item.section || defaultSection])
+    }
+
+    if (getSelectedModelConfigs().length < 2) {
+        for (const model of availableModels.slice(0, 4)) {
+            setModelSections(model, [defaultSection])
+        }
+    }
+
+    appliedModelConfigs = cloneConfigs(getSelectedModelConfigs())
     renderModelSelector()
 }
 
@@ -235,23 +414,76 @@ function showCommandBox(type, label, placeholder) {
     commandInput.focus()
 }
 
-async function start() {
-    const q = document.getElementById("question").value.trim()
-    if (!q) return
-    if (selectedModels.length < 2) {
+function resetSuggestionState() {
+    pendingSuggestion = null
+    suggestionApproved = false
+    manualSelectionChosen = false
+    suggestedQuestion = ""
+    approvedSuggestedModels = null
+    suggestionBox.classList.add("hidden")
+}
+
+function renderSuggestionPanel(suggestion) {
+    const items = Array.isArray(suggestion.models) ? suggestion.models : []
+    const list = items.map((m) => `- ${m.model} (${m.section || defaultSection})`).join("\n")
+    suggestionText.textContent =
+        `Suggested section: ${suggestion.section || defaultSection}\n` +
+        `Panel size: ${items.length}\n\n${list}`
+    suggestionBox.classList.remove("hidden")
+}
+
+async function fetchSuggestion(question) {
+    const res = await fetch("/suggest_models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+    })
+    const data = await res.json()
+    if (data.status === "error") {
+        addSystem(`Error: ${data.error}`)
+        return null
+    }
+    return data.suggestion || null
+}
+
+function applySuggestedModels() {
+    if (!pendingSuggestion || !Array.isArray(pendingSuggestion.models)) return
+
+    const normalized = []
+    const seenPairs = new Set()
+    for (const item of pendingSuggestion.models) {
+        if (!item || !availableModels.includes(item.model)) continue
+        const section = availableSections.includes(item.section) ? item.section : defaultSection
+        const key = `${item.model}::${section}`
+        if (seenPairs.has(key)) continue
+        seenPairs.add(key)
+        normalized.push({ model: item.model, section })
+    }
+    approvedSuggestedModels = normalized
+
+    // Preload drawer draft with suggestion (applied only on Select Models or Approve Suggested).
+    setDraftFromConfigs(normalized)
+}
+
+async function beginSession(question, modelConfigs = null) {
+    const finalConfigs = Array.isArray(modelConfigs) ? modelConfigs : getAppliedModelConfigs()
+    if (finalConfigs.length < 2) {
         addSystem("Select at least 2 models before starting.")
         return
     }
 
+    if (!question) return
+
     chat.innerHTML = ""
-    addMessage("human", q)
+    addMessage("human", question)
     memoryView.innerHTML = ""
     contextView.textContent = "(waiting for first turn)"
+    suggestionBox.classList.add("hidden")
 
     const res = await fetch("/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, models: selectedModels })
+        body: JSON.stringify({ question, models: finalConfigs })
     })
     const data = await res.json()
     if (data.status === "error") {
@@ -259,6 +491,8 @@ async function start() {
         return
     }
 
+    appliedModelConfigs = cloneConfigs(finalConfigs)
+    setDraftFromConfigs(appliedModelConfigs)
     setupAgentStyling(data.agents)
 
     running = true
@@ -268,6 +502,94 @@ async function start() {
     hideFinalizationOptions()
 
     loop()
+}
+
+async function start() {
+    const q = questionInput.value.trim()
+    if (!q) return
+    if (getAppliedModelConfigs().length < 2) {
+        addSystem("Select at least 2 models before starting.")
+        return
+    }
+
+    if (suggestedQuestion !== q) {
+        resetSuggestionState()
+    }
+
+    if (!pendingSuggestion) {
+        pendingSuggestion = await fetchSuggestion(q)
+        suggestedQuestion = q
+        if (!pendingSuggestion) return
+        renderSuggestionPanel(pendingSuggestion)
+        addSystem("Review auto-selected models. Approve suggestion or edit manually.")
+        return
+    }
+
+    if (!suggestionApproved && !manualSelectionChosen) {
+        renderSuggestionPanel(pendingSuggestion)
+        return
+    }
+
+    await beginSession(q)
+}
+
+async function approveSuggestedModels() {
+    if (!pendingSuggestion) return
+    applySuggestedModels()
+    if (!approvedSuggestedModels || approvedSuggestedModels.length < 2) {
+        addSystem("Suggested selection has fewer than 2 valid model entries.")
+        return
+    }
+    suggestionApproved = true
+    manualSelectionChosen = false
+    suggestionBox.classList.add("hidden")
+    const q = questionInput.value.trim()
+    if (!q) return
+    appliedModelConfigs = cloneConfigs(approvedSuggestedModels)
+    await beginSession(q, approvedSuggestedModels)
+}
+
+function useManualSelection() {
+    if (pendingSuggestion) {
+        applySuggestedModels()
+    }
+    manualSelectionChosen = true
+    suggestionApproved = false
+    approvedSuggestedModels = null
+    suggestionBox.classList.add("hidden")
+    modelsDrawer.classList.add("open")
+    addSystem("Manual model selection enabled. Choose models/sections, then press Start.")
+}
+
+async function applyModelSelection() {
+    const selected = getSelectedModelConfigs()
+    if (selected.length < 2) {
+        addSystem("Select at least 2 model-section entries.")
+        return
+    }
+
+    if (running && !paused) {
+        addSystem("Pause the session before applying model changes.")
+        return
+    }
+
+    if (running && paused) {
+        const res = await fetch("/set_models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ models: selected })
+        })
+        const data = await res.json()
+        if (data.status === "error") {
+            addSystem(`Error: ${data.error}`)
+            return
+        }
+        setupAgentStyling(data.agents || [])
+        addSystem(`Applied ${selected.length} model-section entries to the paused session.`)
+    }
+
+    appliedModelConfigs = cloneConfigs(selected)
+    closeModelsDrawer()
 }
 
 async function loop() {
@@ -536,3 +858,8 @@ async function submitCommand() {
 loadModels()
 commandInput.addEventListener("input", updateCommandSendState)
 redirectTurnsInput.addEventListener("input", updateCommandSendState)
+questionInput.addEventListener("input", () => {
+    if (questionInput.value.trim() !== suggestedQuestion) {
+        resetSuggestionState()
+    }
+})
