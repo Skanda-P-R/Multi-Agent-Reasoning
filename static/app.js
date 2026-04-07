@@ -31,6 +31,40 @@ const contextView = document.getElementById("context-view")
 const questionInput = document.getElementById("question")
 const suggestionBox = document.getElementById("suggestion-box")
 const suggestionText = document.getElementById("suggestion-text")
+const loadingIndicator = document.getElementById("loading-indicator")
+const loadingText = document.getElementById("loading-text")
+let loadingCounter = 0
+let loadingMessage = "Working..."
+
+function showLoading(message = "Working...") {
+    loadingCounter += 1
+    loadingMessage = message
+    loadingText.textContent = loadingMessage
+    loadingIndicator.classList.remove("hidden")
+}
+
+function hideLoading() {
+    loadingCounter = Math.max(0, loadingCounter - 1)
+    if (loadingCounter === 0) {
+        loadingIndicator.classList.add("hidden")
+        loadingText.textContent = "Working..."
+    } else {
+        loadingText.textContent = loadingMessage
+    }
+}
+
+function setLoadingMessage(message) {
+    loadingMessage = message || "Working..."
+    if (!loadingIndicator.classList.contains("hidden")) {
+        loadingText.textContent = loadingMessage
+    }
+}
+
+function clearLoading() {
+    loadingCounter = 0
+    loadingIndicator.classList.add("hidden")
+    loadingText.textContent = "Working..."
+}
 
 function scrollBottom() {
     chat.scrollTop = chat.scrollHeight
@@ -302,6 +336,7 @@ function getSelectedModelConfigs() {
 }
 
 async function loadModels() {
+    showLoading("Loading available models...")
     const res = await fetch("/models")
     const data = await res.json()
     availableModels = Array.isArray(data.models) ? data.models : []
@@ -333,6 +368,7 @@ async function loadModels() {
 
     appliedModelConfigs = cloneConfigs(getSelectedModelConfigs())
     renderModelSelector()
+    hideLoading()
 }
 
 function renderMemory(memory, contextPreview) {
@@ -433,6 +469,7 @@ function renderSuggestionPanel(suggestion) {
 }
 
 async function fetchSuggestion(question) {
+    showLoading("Analyzing prompt and selecting models...")
     const res = await fetch("/suggest_models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -441,8 +478,10 @@ async function fetchSuggestion(question) {
     const data = await res.json()
     if (data.status === "error") {
         addSystem(`Error: ${data.error}`)
+        hideLoading()
         return null
     }
+    hideLoading()
     return data.suggestion || null
 }
 
@@ -480,6 +519,7 @@ async function beginSession(question, modelConfigs = null) {
     contextView.textContent = "(waiting for first turn)"
     suggestionBox.classList.add("hidden")
 
+    showLoading("Starting session...")
     const res = await fetch("/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -488,6 +528,7 @@ async function beginSession(question, modelConfigs = null) {
     const data = await res.json()
     if (data.status === "error") {
         addSystem(`Error: ${data.error}`)
+        hideLoading()
         return
     }
 
@@ -500,6 +541,7 @@ async function beginSession(question, modelConfigs = null) {
     loopEpoch += 1
     hideHumanTurnOptions()
     hideFinalizationOptions()
+    hideLoading()
 
     loop()
 }
@@ -574,12 +616,14 @@ async function applyModelSelection() {
     }
 
     if (running && paused) {
+        showLoading("Applying model changes...")
         const res = await fetch("/set_models", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ models: selected })
         })
         const data = await res.json()
+        hideLoading()
         if (data.status === "error") {
             addSystem(`Error: ${data.error}`)
             return
@@ -593,11 +637,16 @@ async function applyModelSelection() {
 }
 
 async function loop() {
-    if (!running || paused) return
+    if (!running || paused) {
+        clearLoading()
+        return
+    }
     const myEpoch = loopEpoch
 
+    showLoading("Waiting for next agent response...")
     const res = await fetch("/step", { method: "POST" })
     const data = await res.json()
+    hideLoading()
     if (!running || paused || myEpoch !== loopEpoch) return
 
     renderMemory(data.memory, data.context_preview)
@@ -605,11 +654,13 @@ async function loop() {
     if (data.status === "error") {
         addSystem(`Error: ${data.error || "Unknown server error"}`)
         running = false
+        clearLoading()
         return
     }
 
     if (data.status === "paused") {
         paused = true
+        clearLoading()
         return
     }
 
@@ -617,6 +668,7 @@ async function loop() {
         paused = true
         addSystem("Human turn selected. Choose Inject or Redirect.")
         showHumanTurnOptions()
+        clearLoading()
         return
     }
 
@@ -635,6 +687,7 @@ async function loop() {
             `Completion candidate by ${formatAgentHeading(candidate.agent || "Agent", candidate.model)}. Human approval required.`
         )
         showFinalizationOptions()
+        clearLoading()
         return
     }
 
@@ -646,6 +699,7 @@ async function loop() {
         running = false
         hideHumanTurnOptions()
         hideFinalizationOptions()
+        clearLoading()
         return
     }
 
@@ -668,19 +722,25 @@ async function loop() {
         { bubbleBackground: getAgentBubble(data.agent) }
     )
 
+    showLoading("Preparing next turn...")
     setTimeout(loop, STEP_DELAY_MS)
 }
 
 async function pause() {
+    showLoading("Pausing session...")
     await fetch("/pause", { method: "POST" })
+    hideLoading()
 
     paused = true
     loopEpoch += 1
+    clearLoading()
     addMessage("system", "Session paused")
 }
 
 async function resume() {
+    showLoading("Resuming session...")
     await fetch("/resume", { method: "POST" })
+    hideLoading()
 
     paused = false
     loopEpoch += 1
@@ -690,8 +750,10 @@ async function resume() {
 }
 
 async function stopReasoning() {
+    showLoading("Stopping session...")
     const res = await fetch("/stop", { method: "POST" })
     const data = await res.json()
+    hideLoading()
 
     if (data.status === "error") {
         addSystem(`Error: ${data.error}`)
@@ -711,11 +773,14 @@ async function stopReasoning() {
     running = false
     paused = false
     loopEpoch += 1
+    clearLoading()
 }
 
 async function raiseHand() {
+    showLoading("Raising hand...")
     const res = await fetch("/raise_hand", { method: "POST" })
     const data = await res.json()
+    hideLoading()
 
     if (data.status === "error") {
         addSystem(`Error: ${data.error}`)
@@ -738,8 +803,10 @@ function showFinalizeRedirect() {
 }
 
 async function approveStop() {
+    showLoading("Finalizing completion...")
     const res = await fetch("/finalize/approve", { method: "POST" })
     const data = await res.json()
+    hideLoading()
     if (data.status === "error") {
         addSystem(`Error: ${data.error}`)
         return
@@ -757,12 +824,14 @@ async function approveStop() {
 }
 
 async function continueIteration() {
+    showLoading("Continuing iteration...")
     const res = await fetch("/finalize/continue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({})
     })
     const data = await res.json()
+    hideLoading()
     if (data.status === "error") {
         addSystem(`Error: ${data.error}`)
         return
@@ -781,12 +850,14 @@ async function submitCommand() {
     if (!msg) return
 
     if (commandType === "human_turn_inject") {
+        showLoading("Submitting inject...")
         const res = await fetch("/human_turn", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "inject", message: msg })
         })
         const data = await res.json()
+        hideLoading()
 
         if (data.status === "error") {
             addSystem(`Error: ${data.error}`)
@@ -805,12 +876,14 @@ async function submitCommand() {
         const turnsRaw = redirectTurnsInput.value
         const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
 
+        showLoading("Submitting redirect...")
         const res = await fetch("/human_turn", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "redirect", message: msg, turns })
         })
         const data = await res.json()
+        hideLoading()
 
         if (data.status === "error") {
             addSystem(`Error: ${data.error}`)
@@ -829,12 +902,14 @@ async function submitCommand() {
         const turnsRaw = redirectTurnsInput.value
         const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
 
+        showLoading("Applying redirect and continuing...")
         const res = await fetch("/finalize/continue", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ redirect_message: msg, turns })
         })
         const data = await res.json()
+        hideLoading()
 
         if (data.status === "error") {
             addSystem(`Error: ${data.error}`)

@@ -82,6 +82,33 @@ body {
     background: #fffefb;
 }
 
+.loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(130, 100, 70, 0.14);
+    background: #fff8f0;
+    color: #6a5038;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.loading-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #e6c7a8;
+    border-top-color: #cf7f3d;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .suggestion-box {
     margin: 10px 14px 0;
     padding: 12px;
