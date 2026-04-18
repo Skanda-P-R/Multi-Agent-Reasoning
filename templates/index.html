@@ -8,6 +8,64 @@
 </head>
 
 <body>
+    <button class="models-toggle" onclick="toggleModelsDrawer()">Models</button>
+    <button class="memory-toggle" onclick="toggleMemoryDrawer()">Memory</button>
+    <button class="scores-toggle" onclick="toggleScoresDrawer()">Protocol Scores</button>
+    <button class="queue-toggle" onclick="toggleQueueDrawer()">Hand Queue</button>
+
+    <aside id="models-drawer" class="models-drawer">
+        <div class="memory-header">
+            <h2>Agent Models</h2>
+            <div class="drawer-actions">
+                <button class="btn btn-muted" onclick="applyModelSelection()">Select Models</button>
+                <button class="btn btn-muted" onclick="closeModelsDrawer()">Close</button>
+            </div>
+        </div>
+        <div class="memory-content">
+            <p id="model-count" class="models-meta">Select at least 2 models.</p>
+            <div class="models-actions">
+                <label class="select-all-row">
+                    <input id="select-all-models" type="checkbox" onchange="toggleSelectAll(this.checked)">
+                    <span>Select All Models</span>
+                </label>
+            </div>
+            <div id="models-list" class="models-list"></div>
+        </div>
+    </aside>
+
+    <aside id="memory-drawer" class="memory-drawer">
+        <div class="memory-header">
+            <h2>Shared Memory</h2>
+            <button class="btn btn-muted" onclick="toggleMemoryDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <div id="memory-view"></div>
+            <h3>Context Preview</h3>
+            <pre id="context-view" class="context-view">(no context yet)</pre>
+        </div>
+    </aside>
+
+    <aside id="scores-drawer" class="scores-drawer-panel">
+        <div class="memory-header">
+            <h2>Protocol Scores</h2>
+            <button class="btn btn-muted" onclick="toggleScoresDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <div id="scores-list" class="scores-list"></div>
+        </div>
+    </aside>
+
+    <aside id="queue-drawer" class="queue-drawer-panel">
+        <div class="memory-header">
+            <h2>Hand Queue</h2>
+            <button class="btn btn-muted" onclick="toggleQueueDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <p id="queue-meta" class="models-meta">Queue updates each protocol turn.</p>
+            <div id="queue-track" class="queue-track"></div>
+        </div>
+    </aside>
+
     <div class="app">
         <header class="header">
             <div>
@@ -17,25 +75,62 @@
             <span class="header-badge">Live Session</span>
         </header>
 
+        <div id="loading-indicator" class="loading-indicator hidden" aria-live="polite">
+            <span class="loading-spinner"></span>
+            <span id="loading-text">Working...</span>
+        </div>
+
         <div id="chat" class="chat"></div>
+
+        <div id="suggestion-box" class="suggestion-box hidden">
+            <div class="suggestion-title">Suggested Agent Selection</div>
+            <div id="suggestion-text" class="suggestion-text"></div>
+            <div class="suggestion-actions">
+                <button class="btn btn-muted" onclick="approveSuggestedModels()">Approve Suggested</button>
+                <button class="btn btn-muted" onclick="useManualSelection()">Edit Manually</button>
+            </div>
+        </div>
 
         <div class="control-panel">
             <button class="btn btn-muted" onclick="pause()">Pause</button>
             <button class="btn btn-muted" onclick="resume()">Resume</button>
-            <button class="btn btn-muted" onclick="showInject()">Inject</button>
-            <button class="btn btn-muted" onclick="showRedirect()">Redirect</button>
+            <button class="btn btn-muted" onclick="stopReasoning()">Stop Reasoning</button>
+            <button class="btn btn-muted" onclick="raiseHand()">Raise Hand</button>
+        </div>
+
+        <div id="human-turn-options" class="control-panel hidden">
+            <span class="command-label">HUMAN TURN ACTION</span>
+            <button class="btn btn-muted" onclick="showHumanTurnInject()">Use Inject</button>
+            <button class="btn btn-muted" onclick="showHumanTurnRedirect()">Use Redirect</button>
+        </div>
+
+        <div id="finalization-options" class="control-panel hidden">
+            <span class="command-label">COMPLETION CONTROL</span>
+            <button class="btn btn-muted" onclick="approveStop()">Approve Stop</button>
+            <button class="btn btn-muted" onclick="continueIteration()">Continue Iteration</button>
+            <button class="btn btn-muted" onclick="showFinalizeRedirect()">Redirect & Continue</button>
         </div>
 
         <div id="command-box" class="command-box hidden">
             <span id="command-label" class="command-label"></span>
             <input id="command-input" placeholder="Enter command message...">
             <input id="redirect-turns" type="number" min="1" value="3" class="hidden" title="Redirect turns">
-            <button class="btn" onclick="submitCommand()">Send</button>
+            <button id="command-send-btn" class="btn" onclick="submitCommand()" disabled>Send</button>
         </div>
 
         <div class="input-bar">
             <textarea id="question" placeholder="Ask something..."></textarea>
-            <button id="start-btn" class="btn" onclick="start()">Start</button>
+            <button id="start-btn" class="btn" onclick="start()" disabled>Start</button>
+        </div>
+    </div>
+
+    <div id="details-modal" class="details-modal hidden" onclick="closeDetailsModal(event)">
+        <div class="details-dialog" role="dialog" aria-modal="true" aria-label="Turn details">
+            <div class="details-header">
+                <h3>Turn Details</h3>
+                <button class="btn btn-muted" onclick="closeDetailsModal(event, true)">Close</button>
+            </div>
+            <div id="details-body" class="details-body"></div>
         </div>
     </div>
 
