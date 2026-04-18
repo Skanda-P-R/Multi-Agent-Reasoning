@@ -134,7 +134,8 @@ def stop():
     return jsonify({
         "status": "done",
         "agent": "Human",
-        "text": "Reasoning stopped by human."
+        "text": "Reasoning stopped by human.",
+        **session._state_payload()
     })
 
 

@@ -16,6 +16,9 @@ let approvedSuggestedModels = null
 let agentModelMap = {}
 let agentColorMap = {}
 let loopEpoch = 0
+let agentScores = {}
+let handRaiseScores = {}
+let handQueue = []
 
 const chat = document.getElementById("chat")
 const startBtn = document.getElementById("start-btn")
@@ -26,6 +29,8 @@ const modelsDrawer = document.getElementById("models-drawer")
 const modelsList = document.getElementById("models-list")
 const modelCount = document.getElementById("model-count")
 const memoryDrawer = document.getElementById("memory-drawer")
+const scoresDrawer = document.getElementById("scores-drawer")
+const queueDrawer = document.getElementById("queue-drawer")
 const memoryView = document.getElementById("memory-view")
 const contextView = document.getElementById("context-view")
 const questionInput = document.getElementById("question")
@@ -33,6 +38,8 @@ const suggestionBox = document.getElementById("suggestion-box")
 const suggestionText = document.getElementById("suggestion-text")
 const loadingIndicator = document.getElementById("loading-indicator")
 const loadingText = document.getElementById("loading-text")
+const detailsModal = document.getElementById("details-modal")
+const detailsBody = document.getElementById("details-body")
 let loadingCounter = 0
 let loadingMessage = "Working..."
 
@@ -136,6 +143,15 @@ function addMessage(role, text, options = {}) {
         bubble.style.background = options.bubbleBackground
     }
 
+    if (options.turnDetails) {
+        const btn = document.createElement("button")
+        btn.type = "button"
+        btn.className = "message-details-btn"
+        btn.textContent = "View Turn Details"
+        btn.addEventListener("click", () => openDetailsModal(options.turnDetails))
+        div.appendChild(btn)
+    }
+
     chat.appendChild(div)
     scrollBottom()
 }
@@ -144,8 +160,91 @@ function addSystem(text) {
     addMessage("system", text)
 }
 
+function toPercent(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return "0%"
+    return `${Math.round(num * 100)}%`
+}
+
+function buildTurnDetails(data) {
+    const agent = data.agent || "Unknown"
+    const breakdown = handRaiseScores[agent] || {}
+    const score = agentScores[agent]
+    return {
+        round: data.round,
+        agent,
+        model: data.agent_model || "n/a",
+        selectionReason: data.selection_reason || "n/a",
+        ignored: data.ignored ? (data.ignored_reason || "Ignored by protocol") : "No",
+        quotaLeft: typeof data.quota_left === "undefined" || data.quota_left === null ? "n/a" : data.quota_left,
+        handQueue: Array.isArray(data.queued_interrupts) && data.queued_interrupts.length ? data.queued_interrupts.join(", ") : "(empty)",
+        score: Number.isFinite(score) ? toPercent(score) : "n/a",
+        relevance: Number.isFinite(breakdown.relevance) ? toPercent(breakdown.relevance) : "n/a",
+        novelty: Number.isFinite(breakdown.novelty) ? toPercent(breakdown.novelty) : "n/a",
+        confidence: Number.isFinite(breakdown.confidence) ? toPercent(breakdown.confidence) : "n/a",
+        fairness: Number.isFinite(breakdown.fairness) ? toPercent(breakdown.fairness) : "n/a",
+    }
+}
+
+function renderDetailRow(label, value) {
+    return `<div class="detail-row"><span class="detail-label">${escapeHtml(label)}:</span> ${escapeHtml(String(value))}</div>`
+}
+
+function openDetailsModal(details) {
+    if (!detailsModal || !detailsBody) return
+    const html = [
+        renderDetailRow("Round", details.round),
+        renderDetailRow("Agent", details.agent),
+        renderDetailRow("Model", details.model),
+        renderDetailRow("Selection Reason", details.selectionReason),
+        renderDetailRow("Ignored", details.ignored),
+        renderDetailRow("Quota Left", details.quotaLeft),
+        renderDetailRow("Hand Queue", details.handQueue),
+        renderDetailRow("Final Hand-Raise Score", details.score),
+        renderDetailRow("Relevance", details.relevance),
+        renderDetailRow("Novelty", details.novelty),
+        renderDetailRow("Confidence", details.confidence),
+        renderDetailRow("Fairness", details.fairness),
+    ].join("")
+    detailsBody.innerHTML = `<div class="detail-grid">${html}</div>`
+    detailsModal.classList.remove("hidden")
+}
+
+function closeDetailsModal(event, force = false) {
+    if (force) {
+        if (!detailsModal) return
+        detailsModal.classList.add("hidden")
+        return
+    }
+    if (
+        event &&
+        event.target &&
+        event.target.classList &&
+        !event.target.classList.contains("details-modal") &&
+        event.target.closest(".details-dialog")
+    ) {
+        return
+    }
+    if (!detailsModal) return
+    detailsModal.classList.add("hidden")
+}
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
+        detailsModal.classList.add("hidden")
+    }
+})
+
 function toggleMemoryDrawer() {
     memoryDrawer.classList.toggle("open")
+}
+
+function toggleScoresDrawer() {
+    scoresDrawer.classList.toggle("open")
+}
+
+function toggleQueueDrawer() {
+    queueDrawer.classList.toggle("open")
 }
 
 function toggleModelsDrawer() {
@@ -517,6 +616,8 @@ async function beginSession(question, modelConfigs = null) {
     addMessage("human", question)
     memoryView.innerHTML = ""
     contextView.textContent = "(waiting for first turn)"
+    handQueue = []
+    renderQueuePanel()
     suggestionBox.classList.add("hidden")
 
     showLoading("Starting session...")
@@ -650,6 +751,8 @@ async function loop() {
     if (!running || paused || myEpoch !== loopEpoch) return
 
     renderMemory(data.memory, data.context_preview)
+    updateAgentScores(data.agent_scores, data.hand_raise_scores)
+    updateHandQueue(data.queued_interrupts)
 
     if (data.status === "error") {
         addSystem(`Error: ${data.error || "Unknown server error"}`)
@@ -705,21 +808,13 @@ async function loop() {
 
     const agentClass = data.agent.replace(" ", "").toLowerCase()
 
-    let meta = ""
-    if (data.ignored) {
-        meta += `\n\n_Ignored response_: ${data.ignored_reason}`
-    }
-    if (typeof data.quota_left !== "undefined" && data.quota_left !== null) {
-        meta += `\n\n_Quota left_: ${data.quota_left}`
-    }
-    if (Array.isArray(data.queued_interrupts) && data.queued_interrupts.length) {
-        meta += `\n\n_Hand queue_: ${data.queued_interrupts.join(", ")}`
-    }
-
     addMessage(
         agentClass,
-        `${formatAgentHeading(data.agent, data.agent_model)}\n\n${data.text}${meta}`,
-        { bubbleBackground: getAgentBubble(data.agent) }
+        `${formatAgentHeading(data.agent, data.agent_model)}\n\n${data.text}`,
+        {
+            bubbleBackground: getAgentBubble(data.agent),
+            turnDetails: buildTurnDetails(data),
+        }
     )
 
     showLoading("Preparing next turn...")
@@ -763,6 +858,7 @@ async function stopReasoning() {
     if (data.memory || data.context_preview) {
         renderMemory(data.memory, data.context_preview)
     }
+    updateHandQueue(data.queued_interrupts)
 
     const heading = data.agent === "System" || data.agent === "Human"
         ? `**${data.agent || "Human"}**`
@@ -787,6 +883,10 @@ async function raiseHand() {
         return
     }
 
+    if (!handQueue.includes("Human")) {
+        handQueue.push("Human")
+        renderQueuePanel()
+    }
     addMessage("human", "Hand raised for protocol turn.")
 }
 
@@ -865,6 +965,7 @@ async function submitCommand() {
         }
 
         renderMemory(data.memory, data.context_preview)
+        updateHandQueue(data.queued_interrupts)
         addMessage("human", `Inject: ${msg}`)
         hideHumanTurnOptions()
         paused = false
@@ -891,6 +992,7 @@ async function submitCommand() {
         }
 
         renderMemory(data.memory, data.context_preview)
+        updateHandQueue(data.queued_interrupts)
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideHumanTurnOptions()
         paused = false
@@ -917,6 +1019,7 @@ async function submitCommand() {
         }
 
         renderMemory(data.memory, data.context_preview)
+        updateHandQueue(data.queued_interrupts)
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideFinalizationOptions()
         paused = false
@@ -928,6 +1031,69 @@ async function submitCommand() {
     document.getElementById("command-box").classList.add("hidden")
     commandType = null
     updateCommandSendState()
+}
+
+// Score display functions
+function updateAgentScores(scores, breakdowns) {
+    agentScores = scores || {}
+    handRaiseScores = breakdowns || {}
+    renderScoresPanel()
+}
+
+function updateHandQueue(queue) {
+    if (!Array.isArray(queue)) return
+    handQueue = [...queue]
+    renderQueuePanel()
+}
+
+function renderScoresPanel() {
+    const scoresList = document.getElementById("scores-list")
+    if (!scoresList) return
+
+    const html = Object.entries(agentScores)
+        .map(([agentName, score]) => {
+            const breakdown = handRaiseScores[agentName] || {}
+            const scorePercentage = Math.round(score * 100)
+            return `
+            <div class="score-item" title="Relevance: ${(breakdown.relevance || 0).toFixed(2)}, Novelty: ${(breakdown.novelty || 0).toFixed(2)}, Confidence: ${(breakdown.confidence || 0).toFixed(2)}, Fairness: ${(breakdown.fairness || 0).toFixed(2)}">
+                <span class="agent-name">${escapeHtml(agentName)}</span>
+                <span class="agent-score">${scorePercentage}%</span>
+            </div>
+        `})
+        .join("")
+    
+    scoresList.innerHTML = html || "<p>No scores yet</p>"
+}
+
+function renderQueuePanel() {
+    const queueTrack = document.getElementById("queue-track")
+    if (!queueTrack) return
+    const queueMeta = document.getElementById("queue-meta")
+
+    if (!handQueue.length) {
+        queueTrack.innerHTML = `<div class="detail-row">Queue is empty</div>`
+        if (queueMeta) queueMeta.textContent = "Queue updates each protocol turn."
+        return
+    }
+
+    if (queueMeta) {
+        queueMeta.textContent = `Front of queue: ${handQueue[0]}`
+    }
+
+    const html = handQueue
+        .map((agent, idx) => {
+            const arrow = idx < handQueue.length - 1 ? `<div class="queue-arrow">↓</div>` : ""
+            return `
+            <div class="queue-item">
+                <span class="queue-pos">${idx + 1}</span>
+                <span class="queue-agent">${escapeHtml(agent)}</span>
+            </div>
+            ${arrow}
+        `
+        })
+        .join("")
+
+    queueTrack.innerHTML = html
 }
 
 loadModels()

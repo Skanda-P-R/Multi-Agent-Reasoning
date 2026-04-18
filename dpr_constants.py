@@ -15,13 +15,11 @@ AVAILABLE_MODELS = [
     "groq/compound-mini",
     "openai/gpt-oss-safeguard-20b",
     "qwen/qwen3-32b",
-    "moonshotai/kimi-k2-instruct",
 ]
 
 DEFAULT_AGENT_MODELS = [
     "llama-3.3-70b-versatile",
     "openai/gpt-oss-120b",
-    "moonshotai/kimi-k2-instruct",
     "openai/gpt-oss-20b",
 ]
 
@@ -33,10 +31,11 @@ SECTION_HEADERS = {
 }
 DEFAULT_SECTION = "general"
 
-MAX_TURNS = 60
-STARTING_QUOTA = 8
+MAX_TURNS = 100
+STARTING_QUOTA = 15
 REDIRECT_DURATION_TURNS = 3
-STARVATION_THRESHOLD = 5
+STARVATION_THRESHOLD = 6
+STARVATION_COOLDOWN_TURNS = 3
 LOOP_WINDOW = 4
 MAX_REPEAT_STREAK = 2
 HUMAN_NAME = "Human"
@@ -74,3 +73,11 @@ DECISION_START_VERBS = {
     "assign",
     "establish",
 }
+
+HAND_RAISE_THRESHOLD = 0.40
+RELEVANCE_WEIGHT = 0.30
+NOVELTY_WEIGHT = 0.25
+CONFIDENCE_WEIGHT = 0.20
+FAIRNESS_WEIGHT = 0.25
+SIMILARITY_CHECK_WINDOW = 3
+NOVELTY_SIMILARITY_THRESHOLD = 0.7

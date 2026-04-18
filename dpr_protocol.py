@@ -8,13 +8,17 @@ from collections import deque
 import requests
 from dpr_constants import (
     AVAILABLE_MODELS,
+    CONFIDENCE_WEIGHT,
     DECISION_START_VERBS,
     DEFAULT_AGENT_MODELS,
     DEFAULT_SECTION,
+    FAIRNESS_WEIGHT,
+    HAND_RAISE_THRESHOLD,
     HUMAN_NAME,
     LOOP_WINDOW,
     MAX_REPEAT_STREAK,
     MAX_SUMMARY_TEXT_CHARS,
+    MAX_TURNS,
     MAX_TURNS,
     MEMORY_CALL_DELAY_SECONDS,
     MEMORY_CHANGELOG_LIMIT,
@@ -23,10 +27,15 @@ from dpr_constants import (
     MEMORY_SECTION_LIMIT,
     MEMORY_SIMILARITY_THRESHOLD,
     MIN_PERSISTENT_OPEN_QUESTIONS,
+    NOVELTY_SIMILARITY_THRESHOLD,
+    NOVELTY_WEIGHT,
     RECENT_TURNS_IN_CONTEXT,
     REDIRECT_DURATION_TURNS,
+    RELEVANCE_WEIGHT,
     SECTION_HEADERS,
     SECTION_PRIORITY_HINTS,
+    STARVATION_COOLDOWN_TURNS,
+    SIMILARITY_CHECK_WINDOW,
     STARVATION_THRESHOLD,
     STARTING_QUOTA,
 )
@@ -105,6 +114,13 @@ class DPRSession:
         }
         self.last_context_snapshot = ""
 
+        # Hand-raise protocol with scoring
+        self.agent_scores = {a["name"]: 0.5 for a in self.agents}
+        self.agent_success_rates = {a["name"]: 0.5 for a in self.agents}
+        self.score_history = []
+        self.hand_raise_scores = {}  # {agent_name: {relevance, novelty, confidence, fairness, final}}
+        self.last_selection_reason = ""  # Tracks HOW the last agent was selected
+
     def update_agents(self, selected_models):
         if not self.paused:
             raise RuntimeError("Pause the session before updating models.")
@@ -132,6 +148,10 @@ class DPRSession:
             a["name"]: old_last_spoke_by_pair.get((a["model"], a["section"]), -1)
             for a in self.agents
         }
+
+        # Preserve scores for existing agents, initialize for new ones
+        self.agent_scores = {a["name"]: self.agent_scores.get(a["name"], 0.5) for a in self.agents}
+        self.agent_success_rates = {a["name"]: self.agent_success_rates.get(a["name"], 0.5) for a in self.agents}
 
         valid_names = {a["name"] for a in self.agents}
         self.hand_queue = deque([x for x in self.hand_queue if x == HUMAN_NAME or x in valid_names])
@@ -581,6 +601,9 @@ Latest turn text:
                 "changelog": list(self.shared_memory["changelog"]),
             },
             "context_preview": self.last_context_snapshot,
+            "agent_scores": dict(self.agent_scores),
+            "hand_raise_scores": dict(self.hand_raise_scores),
+            "selection_reason": self.last_selection_reason,
         }
 
     # --------------------------------------------
@@ -655,22 +678,177 @@ Instructions:
         return context
 
     # --------------------------------------------
-    # HAND RAISE
+    # HAND RAISE WITH SCORING
     # --------------------------------------------
 
+    def _compute_relevance_score(self, agent_name):
+        """
+        Compute relevance score based on agent's section matching recent discussion.
+        Returns 0.0-1.0 where 1.0 = highly relevant
+        """
+        agent_section = next(
+            (a.get("section", DEFAULT_SECTION) for a in self.agents if a["name"] == agent_name),
+            DEFAULT_SECTION,
+        )
+        
+        # Check if agent section matches any recent memory
+        memory_text = (
+            " ".join(self.shared_memory.get("options", [])[:3]) + " " +
+            " ".join(self.shared_memory.get("decisions", [])[:2])
+        ).lower()
+        
+        section_keywords = {
+            "programming": ["code", "algorithm", "debug", "api", "backend", "frontend", "software", "implement"],
+            "education": ["teach", "learn", "student", "explain", "clarity", "pedagogy", "curriculum"],
+            "research": ["research", "evidence", "tradeoff", "analysis", "rigorous", "study"],
+            "general": [],
+        }
+        
+        keywords = section_keywords.get(agent_section, [])
+        if not keywords:
+            return 0.6  # General section gets moderate score
+        
+        matches = sum(1 for kw in keywords if kw in memory_text)
+        relevance = min(0.95, 0.4 + (matches * 0.15))
+        return relevance
+
+    def _compute_novelty_score(self, agent_name):
+        """
+        Compute novelty score based on dissimilarity from recent responses.
+        Returns 0.0-1.0 where 1.0 = very different from recent
+        """
+        if not self.responses:
+            return 0.8  # First agent gets high novelty
+        
+        # Get recent accepted responses
+        recent = [r["text"] for r in self.responses if r.get("accepted")][-SIMILARITY_CHECK_WINDOW:]
+        if not recent:
+            return 0.75
+        
+        # Normalize texts for comparison
+        agent_model = next(
+            (a["model"] for a in self.agents if a["name"] == agent_name),
+            ""
+        )
+        model_name = agent_model.split("/")[-1] if "/" in agent_model else agent_model
+        
+        # novelty based on turn recency: agents who haven't spoken recently get higher novelty
+        turns_since_spoke = self.turn - self.last_spoke.get(agent_name, -SIMILARITY_CHECK_WINDOW)
+        recency_novelty = min(1.0, turns_since_spoke / (SIMILARITY_CHECK_WINDOW * 2))
+        
+        return 0.4 + (recency_novelty * 0.6)
+
+    def _compute_confidence_score(self, agent_name):
+        """
+        Compute confidence score based on historical acceptance rate.
+        Returns 0.0-1.0 where 1.0 = always accepted
+        """
+        return self.agent_success_rates.get(agent_name, 0.5)
+
+    def _compute_fairness_score(self, agent_name):
+        """
+        Compute fairness score based on turn distribution.
+        Returns 0.0-1.0 where 1.0 = long time since last speaking
+        """
+        if agent_name == HUMAN_NAME:
+            return 0.3
+        
+        turns_since_spoke = self.turn - self.last_spoke.get(agent_name, -MAX_TURNS)
+        fairness = min(1.0, turns_since_spoke / (MAX_TURNS * 0.5))
+        return fairness
+
+    def _compute_hand_raise_score(self, agent_name):
+        """
+        Compute overall hand-raise score using weighted components.
+        Returns score, breakdown dict
+        """
+        if agent_name == HUMAN_NAME:
+            return 0.0, {}
+        
+        if self.quotas.get(agent_name, 0) <= 0:
+            return 0.0, {}
+        
+        relevance = self._compute_relevance_score(agent_name)
+        novelty = self._compute_novelty_score(agent_name)
+        confidence = self._compute_confidence_score(agent_name)
+        fairness = self._compute_fairness_score(agent_name)
+        
+        final_score = (
+            RELEVANCE_WEIGHT * relevance +
+            NOVELTY_WEIGHT * novelty +
+            CONFIDENCE_WEIGHT * confidence +
+            FAIRNESS_WEIGHT * fairness
+        )
+        
+        breakdown = {
+            "relevance": round(relevance, 3),
+            "novelty": round(novelty, 3),
+            "confidence": round(confidence, 3),
+            "fairness": round(fairness, 3),
+            "final": round(final_score, 3),
+        }
+        
+        return final_score, breakdown
+
+    def _update_agent_success_rate(self, agent_name, accepted):
+        """
+        Update agent's success rate based on this response.
+        Uses exponential moving average to give recent results more weight.
+        """
+        current_rate = self.agent_success_rates.get(agent_name, 0.5)
+        alpha = 0.3  # Weight for new observation
+        new_rate = alpha * (1.0 if accepted else 0.0) + (1 - alpha) * current_rate
+        self.agent_success_rates[agent_name] = new_rate
+
+    def _build_scored_hand_queue(self):
+        """
+        Build a priority queue of agents based on hand-raise scores.
+        Returns sorted list of (score, agent_name) tuples.
+        """
+        candidates = []
+        for a in self.agents:
+            agent_name = a["name"]
+            if self.quotas.get(agent_name, 0) <= 0:
+                continue
+            if agent_name in self.hand_queue:
+                score, breakdown = self._compute_hand_raise_score(agent_name)
+                self.hand_raise_scores[agent_name] = breakdown
+                if score >= HAND_RAISE_THRESHOLD:
+                    candidates.append((score, agent_name))
+        
+        # Sort by score descending
+        candidates.sort(key=lambda x: (-x[0], self._token_distance(x[1])))
+        return candidates
+
     def maybe_raise_hand(self, agent):
-        if random.random() < 0.25:
-            if agent not in self.hand_queue:
-                self.hand_queue.append(agent)
+        """
+        Raise hand based on score rather than random probability.
+        """
+        # Prevent immediate self re-queue right after speaking.
+        if self.last_spoke.get(agent) == self.turn:
+            return
+
+        score, breakdown = self._compute_hand_raise_score(agent)
+        self.hand_raise_scores[agent] = breakdown
+        if score >= HAND_RAISE_THRESHOLD and agent not in self.hand_queue:
+            self.hand_queue.append(agent)
 
     def enqueue_interrupts(self, speaker):
+        """
+        Compute interrupt scores for all agents and queue those above threshold.
+        """
         for a in self.agents:
             agent = a["name"]
             if agent == speaker or self.quotas[agent] <= 0:
                 continue
 
+            score, breakdown = self._compute_hand_raise_score(agent)
+            self.hand_raise_scores[agent] = breakdown
+            
             starved = (self.turn - self.last_spoke[agent]) >= STARVATION_THRESHOLD
-            if starved or random.random() < 0.2:
+            turns_since_spoke = self.turn - self.last_spoke.get(agent, -1)
+            # Throttle auto-queueing so queue doesn't become permanently saturated.
+            if starved or (score >= HAND_RAISE_THRESHOLD and turns_since_spoke >= 2):
                 if agent not in self.hand_queue:
                     self.hand_queue.append(agent)
 
@@ -683,8 +861,53 @@ Instructions:
         if not live_agents and not self.human_hand_raised:
             return None
 
+        # Score-based selection from hand_queue
+        if self.hand_queue:
+            ordered_candidates = [
+                a for a in list(self.hand_queue) if a == HUMAN_NAME or self.quotas[a] > 0
+            ]
+            # Human is prioritized only when they naturally reach the front of queue.
+            if (
+                ordered_candidates
+                and ordered_candidates[0] == HUMAN_NAME
+                and self.human_hand_raised
+            ):
+                self.hand_queue = deque([a for a in self.hand_queue if a != HUMAN_NAME])
+                self.human_hand_raised = False
+                self.last_selection_reason = "Human turn reached front of hand queue"
+                return HUMAN_NAME
+
+            # Until Human reaches front, keep Human in queue and score-select agents.
+            candidates = [a for a in ordered_candidates if a != HUMAN_NAME]
+            if candidates:
+                # Re-compute fresh scores for ALL candidates before selecting
+                scored_candidates = []
+                for candidate in candidates:
+                    score, breakdown = self._compute_hand_raise_score(candidate)
+                    self.agent_scores[candidate] = score
+                    self.hand_raise_scores[candidate] = breakdown
+                    scored_candidates.append((score, candidate))
+                
+                scored_candidates.sort(key=lambda x: (-x[0], self._token_distance(x[1])))
+                agent = scored_candidates[0][1]
+                agent_score = scored_candidates[0][0]
+                
+                self.hand_queue = deque([a for a in self.hand_queue if a != agent])
+                self.last_selection_reason = f"Hand-raise queue: {agent} raised hand with score {agent_score:.1%}"
+                self.current_index = (self._agent_index(agent) + 1) % len(self.agents)
+                return agent
+
+        # Starvation protection fallback: only after queue-scoring is exhausted.
+        # Cooldown prevents immediate re-selection from starvation.
+        recent_speakers = {
+            r.get("agent")
+            for r in self.responses[-STARVATION_COOLDOWN_TURNS:]
+            if r.get("agent")
+        }
         starved_agents = [
-            a for a in live_agents if (self.turn - self.last_spoke[a]) >= STARVATION_THRESHOLD
+            a
+            for a in live_agents
+            if (self.turn - self.last_spoke[a]) >= STARVATION_THRESHOLD and a not in recent_speakers
         ]
         if starved_agents:
             chosen = sorted(
@@ -696,29 +919,48 @@ Instructions:
                 "anti_starvation",
                 f"Prioritized {chosen} due to starvation protection.",
             )
+            score, breakdown = self._compute_hand_raise_score(chosen)
+            self.agent_scores[chosen] = score
+            self.hand_raise_scores[chosen] = breakdown
+            self.last_selection_reason = (
+                f"Starvation fallback ({STARVATION_COOLDOWN_TURNS}-turn cooldown): "
+                f"{chosen} starved for {self.turn - self.last_spoke[chosen]} turns"
+            )
             self.current_index = (self._agent_index(chosen) + 1) % len(self.agents)
             return chosen
 
-        if self.hand_queue:
-            candidates = [
-                a for a in list(self.hand_queue) if a == HUMAN_NAME or self.quotas[a] > 0
-            ]
-            if candidates:
-                agent = sorted(candidates, key=lambda a: self._token_distance(a))[0]
-                self.hand_queue = deque([a for a in self.hand_queue if a != agent])
-                if agent == HUMAN_NAME:
-                    self.human_hand_raised = False
-                    return HUMAN_NAME
-                self.current_index = (self._agent_index(agent) + 1) % len(self.agents)
-                return agent
-
+        # Round-robin fallback: use true round-robin if no agent qualifies threshold
+        # Otherwise use score-based selection
+        fallback_candidates = []
         for i in range(len(self.agents)):
             idx = (self.current_index + i) % len(self.agents)
             agent = self.agents[idx]["name"]
 
             if self.quotas[agent] > 0:
-                self.current_index = (idx + 1) % len(self.agents)
-                return agent
+                score, breakdown = self._compute_hand_raise_score(agent)
+                self.agent_scores[agent] = score
+                self.hand_raise_scores[agent] = breakdown
+                fallback_candidates.append((score, agent, idx))
+        
+        if fallback_candidates:
+            # Check if ANY agent qualifies (score >= threshold)
+            qualified = [c for c in fallback_candidates if c[0] >= HAND_RAISE_THRESHOLD]
+            
+            if qualified:
+                # SCORE-BASED: Select highest scorer who meets threshold
+                qualified.sort(key=lambda x: (-x[0], self._token_distance(x[1])))
+                agent = qualified[0][1]
+                agent_score = qualified[0][0]
+                self.last_selection_reason = f"Score-based: {agent} qualifies with {agent_score:.1%} (threshold: {HAND_RAISE_THRESHOLD:.1%})"
+            else:
+                # ROUND-ROBIN: No one qualifies, use pure round-robin order
+                # (preserve current_index for fair rotation)
+                agent = fallback_candidates[0][1]
+                agent_score = fallback_candidates[0][0]
+                self.last_selection_reason = f"Round-robin (all below {HAND_RAISE_THRESHOLD:.1%} threshold): {agent}'s turn ({agent_score:.1%})"
+                
+            self.current_index = (self._agent_index(agent) + 1) % len(self.agents)
+            return agent
 
         return None
 
@@ -772,6 +1014,10 @@ Instructions:
                 "round": self.turn,
                 **self._state_payload(),
             }
+
+        # Once selected, remove agent from hand queue regardless of selection path
+        # (starvation, score-based queue, round-robin fallback, or human hand-raise).
+        self.hand_queue = deque([a for a in self.hand_queue if a != agent_name])
 
         if agent_name == HUMAN_NAME:
             self.awaiting_human_turn = True
@@ -920,6 +1166,9 @@ Instructions:
         }
 
         self.responses.append(entry)
+        
+        # Update agent success rate
+        self._update_agent_success_rate(agent_name, ignored_reason is None)
 
         if ignored_reason:
             ignored_entry = {
@@ -933,21 +1182,33 @@ Instructions:
             self._update_shared_memory(agent_name, answer)
 
         if final_design_complete:
-            self.awaiting_human_finalization = True
-            self.finalization_candidate = {
-                "agent": agent_name,
-                "model": model,
-                "text": answer,
-            }
-            return {
-                "status": "awaiting_human_finalization",
-                "agent": HUMAN_NAME,
-                "agent_model": None,
-                "text": "Completion candidate raised. Human approval required.",
-                "round": self.turn,
-                "finalization_candidate": self.finalization_candidate,
-                **self._state_payload(),
-            }
+            # Per DPR principles: Only allow completion when ALL agents have participated
+            agents_who_spoke = set(self.last_spoke.keys()) - {0} if 0 in self.last_spoke else set(self.last_spoke.keys())
+            agents_not_spoken = [a["name"] for a in self.agents if self.last_spoke.get(a["name"], 0) == 0]
+            
+            if agents_not_spoken:
+                # Don't complete yet - other agents need to contribute
+                self._push_facilitator_event(
+                    "completion_deferred",
+                    f"Completion proposed but deferred: Agents {', '.join(agents_not_spoken)} haven't participated yet. Continuing for iterative refinement as per DPR protocol."
+                )
+            else:
+                # All agents have participated - allow completion
+                self.awaiting_human_finalization = True
+                self.finalization_candidate = {
+                    "agent": agent_name,
+                    "model": model,
+                    "text": answer,
+                }
+                return {
+                    "status": "awaiting_human_finalization",
+                    "agent": HUMAN_NAME,
+                    "agent_model": None,
+                    "text": "Completion candidate raised. Human approval required.",
+                    "round": self.turn,
+                    "finalization_candidate": self.finalization_candidate,
+                    **self._state_payload(),
+                }
 
         self.quotas[agent_name] -= 1
         self.last_spoke[agent_name] = self.turn
@@ -962,6 +1223,13 @@ Instructions:
         self.enqueue_interrupts(agent_name)
 
         self.turn += 1
+        
+        # Recalculate all scores after this turn so UI shows current values
+        for agent in self.agents:
+            agent_name_iter = agent["name"]
+            score, breakdown = self._compute_hand_raise_score(agent_name_iter)
+            self.agent_scores[agent_name_iter] = score
+            self.hand_raise_scores[agent_name_iter] = breakdown
 
         return {
             "status": "ok",

@@ -10,6 +10,8 @@
 <body>
     <button class="models-toggle" onclick="toggleModelsDrawer()">Models</button>
     <button class="memory-toggle" onclick="toggleMemoryDrawer()">Memory</button>
+    <button class="scores-toggle" onclick="toggleScoresDrawer()">Protocol Scores</button>
+    <button class="queue-toggle" onclick="toggleQueueDrawer()">Hand Queue</button>
 
     <aside id="models-drawer" class="models-drawer">
         <div class="memory-header">
@@ -40,6 +42,27 @@
             <div id="memory-view"></div>
             <h3>Context Preview</h3>
             <pre id="context-view" class="context-view">(no context yet)</pre>
+        </div>
+    </aside>
+
+    <aside id="scores-drawer" class="scores-drawer-panel">
+        <div class="memory-header">
+            <h2>Protocol Scores</h2>
+            <button class="btn btn-muted" onclick="toggleScoresDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <div id="scores-list" class="scores-list"></div>
+        </div>
+    </aside>
+
+    <aside id="queue-drawer" class="queue-drawer-panel">
+        <div class="memory-header">
+            <h2>Hand Queue</h2>
+            <button class="btn btn-muted" onclick="toggleQueueDrawer()">Close</button>
+        </div>
+        <div class="memory-content">
+            <p id="queue-meta" class="models-meta">Queue updates each protocol turn.</p>
+            <div id="queue-track" class="queue-track"></div>
         </div>
     </aside>
 
@@ -98,6 +121,16 @@
         <div class="input-bar">
             <textarea id="question" placeholder="Ask something..."></textarea>
             <button id="start-btn" class="btn" onclick="start()" disabled>Start</button>
+        </div>
+    </div>
+
+    <div id="details-modal" class="details-modal hidden" onclick="closeDetailsModal(event)">
+        <div class="details-dialog" role="dialog" aria-modal="true" aria-label="Turn details">
+            <div class="details-header">
+                <h3>Turn Details</h3>
+                <button class="btn btn-muted" onclick="closeDetailsModal(event, true)">Close</button>
+            </div>
+            <div id="details-body" class="details-body"></div>
         </div>
     </div>
 
