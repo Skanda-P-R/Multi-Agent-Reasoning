@@ -14,7 +14,6 @@ AVAILABLE_MODELS = [
     "openai/gpt-oss-20b",
     "groq/compound-mini",
     "openai/gpt-oss-safeguard-20b",
-    "qwen/qwen3-32b",
 ]
 
 DEFAULT_AGENT_MODELS = [

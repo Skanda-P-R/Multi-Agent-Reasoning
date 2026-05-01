@@ -8,17 +8,13 @@ from collections import deque
 import requests
 from dpr_constants import (
     AVAILABLE_MODELS,
-    CONFIDENCE_WEIGHT,
     DECISION_START_VERBS,
     DEFAULT_AGENT_MODELS,
     DEFAULT_SECTION,
-    FAIRNESS_WEIGHT,
-    HAND_RAISE_THRESHOLD,
     HUMAN_NAME,
     LOOP_WINDOW,
     MAX_REPEAT_STREAK,
     MAX_SUMMARY_TEXT_CHARS,
-    MAX_TURNS,
     MAX_TURNS,
     MEMORY_CALL_DELAY_SECONDS,
     MEMORY_CHANGELOG_LIMIT,
@@ -27,16 +23,10 @@ from dpr_constants import (
     MEMORY_SECTION_LIMIT,
     MEMORY_SIMILARITY_THRESHOLD,
     MIN_PERSISTENT_OPEN_QUESTIONS,
-    NOVELTY_SIMILARITY_THRESHOLD,
-    NOVELTY_WEIGHT,
     RECENT_TURNS_IN_CONTEXT,
     REDIRECT_DURATION_TURNS,
-    RELEVANCE_WEIGHT,
     SECTION_HEADERS,
     SECTION_PRIORITY_HINTS,
-    STARVATION_COOLDOWN_TURNS,
-    SIMILARITY_CHECK_WINDOW,
-    STARVATION_THRESHOLD,
     STARTING_QUOTA,
 )
 from dpr_model_client import call_model
@@ -93,6 +83,7 @@ class DPRSession:
         self.last_spoke = {a["name"]: -1 for a in self.agents}
 
         self.hand_queue = deque()
+        self.intent_queue = deque()
         self.human_hand_raised = False
         self.awaiting_human_turn = False
         self.awaiting_human_finalization = False
@@ -114,12 +105,10 @@ class DPRSession:
         }
         self.last_context_snapshot = ""
 
-        # Hand-raise protocol with scoring
-        self.agent_scores = {a["name"]: 0.5 for a in self.agents}
-        self.agent_success_rates = {a["name"]: 0.5 for a in self.agents}
-        self.score_history = []
-        self.hand_raise_scores = {}  # {agent_name: {relevance, novelty, confidence, fairness, final}}
-        self.last_selection_reason = ""  # Tracks HOW the last agent was selected
+        self.agent_scores = {}
+        self.hand_raise_scores = {}
+        self.last_selection_reason = ""
+        self.bootstrap_done = False
 
     def update_agents(self, selected_models):
         if not self.paused:
@@ -149,12 +138,9 @@ class DPRSession:
             for a in self.agents
         }
 
-        # Preserve scores for existing agents, initialize for new ones
-        self.agent_scores = {a["name"]: self.agent_scores.get(a["name"], 0.5) for a in self.agents}
-        self.agent_success_rates = {a["name"]: self.agent_success_rates.get(a["name"], 0.5) for a in self.agents}
-
         valid_names = {a["name"] for a in self.agents}
         self.hand_queue = deque([x for x in self.hand_queue if x == HUMAN_NAME or x in valid_names])
+        self.intent_queue = deque([x for x in self.intent_queue if x.get("agent") == HUMAN_NAME or x.get("agent") in valid_names])
         self.current_index = 0 if not self.agents else (self.current_index % len(self.agents))
         if self.last_speaker not in valid_names and self.last_speaker != HUMAN_NAME:
             self.last_speaker = None
@@ -610,7 +596,7 @@ Latest turn text:
     # CONTEXT
     # --------------------------------------------
 
-    def build_context(self, agent_name):
+    def build_context(self, agent_name, pointer_text=None, consume_human_instruction=False):
         agent_section = next(
             (a.get("section", DEFAULT_SECTION) for a in self.agents if a["name"] == agent_name),
             DEFAULT_SECTION,
@@ -636,7 +622,8 @@ Human instruction:
 
 You MUST incorporate this instruction into your reasoning.
 """
-            self.pending_human_instruction = None
+            if consume_human_instruction:
+                self.pending_human_instruction = None
 
         redirect_block = ""
         if self.pending_redirect and self.pending_redirect["remaining"] > 0:
@@ -645,6 +632,15 @@ Facilitator redirection (high priority):
 {self.pending_redirect['message']}
 
 You MUST keep your response aligned to this redirection.
+"""
+
+        pointer_block = ""
+        if pointer_text:
+            pointer_block = f"""
+Agent pointer (focus this turn):
+{pointer_text}
+
+You MUST focus your response on this pointer and advance it concretely.
 """
 
         context = f"""
@@ -662,6 +658,7 @@ Recent accepted turns:
 
 {human_block}
 {redirect_block}
+{pointer_block}
 
 Instructions:
 - Continue the design logically.
@@ -677,292 +674,186 @@ Instructions:
         self.last_context_snapshot = context.strip()
         return context
 
-    # --------------------------------------------
-    # HAND RAISE WITH SCORING
-    # --------------------------------------------
-
-    def _compute_relevance_score(self, agent_name):
-        """
-        Compute relevance score based on agent's section matching recent discussion.
-        Returns 0.0-1.0 where 1.0 = highly relevant
-        """
-        agent_section = next(
-            (a.get("section", DEFAULT_SECTION) for a in self.agents if a["name"] == agent_name),
-            DEFAULT_SECTION,
-        )
-        
-        # Check if agent section matches any recent memory
-        memory_text = (
-            " ".join(self.shared_memory.get("options", [])[:3]) + " " +
-            " ".join(self.shared_memory.get("decisions", [])[:2])
-        ).lower()
-        
-        section_keywords = {
-            "programming": ["code", "algorithm", "debug", "api", "backend", "frontend", "software", "implement"],
-            "education": ["teach", "learn", "student", "explain", "clarity", "pedagogy", "curriculum"],
-            "research": ["research", "evidence", "tradeoff", "analysis", "rigorous", "study"],
-            "general": [],
-        }
-        
-        keywords = section_keywords.get(agent_section, [])
-        if not keywords:
-            return 0.6  # General section gets moderate score
-        
-        matches = sum(1 for kw in keywords if kw in memory_text)
-        relevance = min(0.95, 0.4 + (matches * 0.15))
-        return relevance
-
-    def _compute_novelty_score(self, agent_name):
-        """
-        Compute novelty score based on dissimilarity from recent responses.
-        Returns 0.0-1.0 where 1.0 = very different from recent
-        """
-        if not self.responses:
-            return 0.8  # First agent gets high novelty
-        
-        # Get recent accepted responses
-        recent = [r["text"] for r in self.responses if r.get("accepted")][-SIMILARITY_CHECK_WINDOW:]
-        if not recent:
-            return 0.75
-        
-        # Normalize texts for comparison
-        agent_model = next(
-            (a["model"] for a in self.agents if a["name"] == agent_name),
-            ""
-        )
-        model_name = agent_model.split("/")[-1] if "/" in agent_model else agent_model
-        
-        # novelty based on turn recency: agents who haven't spoken recently get higher novelty
-        turns_since_spoke = self.turn - self.last_spoke.get(agent_name, -SIMILARITY_CHECK_WINDOW)
-        recency_novelty = min(1.0, turns_since_spoke / (SIMILARITY_CHECK_WINDOW * 2))
-        
-        return 0.4 + (recency_novelty * 0.6)
-
-    def _compute_confidence_score(self, agent_name):
-        """
-        Compute confidence score based on historical acceptance rate.
-        Returns 0.0-1.0 where 1.0 = always accepted
-        """
-        return self.agent_success_rates.get(agent_name, 0.5)
-
-    def _compute_fairness_score(self, agent_name):
-        """
-        Compute fairness score based on turn distribution.
-        Returns 0.0-1.0 where 1.0 = long time since last speaking
-        """
-        if agent_name == HUMAN_NAME:
-            return 0.3
-        
-        turns_since_spoke = self.turn - self.last_spoke.get(agent_name, -MAX_TURNS)
-        fairness = min(1.0, turns_since_spoke / (MAX_TURNS * 0.5))
-        return fairness
-
-    def _compute_hand_raise_score(self, agent_name):
-        """
-        Compute overall hand-raise score using weighted components.
-        Returns score, breakdown dict
-        """
-        if agent_name == HUMAN_NAME:
-            return 0.0, {}
-        
-        if self.quotas.get(agent_name, 0) <= 0:
-            return 0.0, {}
-        
-        relevance = self._compute_relevance_score(agent_name)
-        novelty = self._compute_novelty_score(agent_name)
-        confidence = self._compute_confidence_score(agent_name)
-        fairness = self._compute_fairness_score(agent_name)
-        
-        final_score = (
-            RELEVANCE_WEIGHT * relevance +
-            NOVELTY_WEIGHT * novelty +
-            CONFIDENCE_WEIGHT * confidence +
-            FAIRNESS_WEIGHT * fairness
-        )
-        
-        breakdown = {
-            "relevance": round(relevance, 3),
-            "novelty": round(novelty, 3),
-            "confidence": round(confidence, 3),
-            "fairness": round(fairness, 3),
-            "final": round(final_score, 3),
-        }
-        
-        return final_score, breakdown
-
-    def _update_agent_success_rate(self, agent_name, accepted):
-        """
-        Update agent's success rate based on this response.
-        Uses exponential moving average to give recent results more weight.
-        """
-        current_rate = self.agent_success_rates.get(agent_name, 0.5)
-        alpha = 0.3  # Weight for new observation
-        new_rate = alpha * (1.0 if accepted else 0.0) + (1 - alpha) * current_rate
-        self.agent_success_rates[agent_name] = new_rate
-
-    def _build_scored_hand_queue(self):
-        """
-        Build a priority queue of agents based on hand-raise scores.
-        Returns sorted list of (score, agent_name) tuples.
-        """
-        candidates = []
-        for a in self.agents:
-            agent_name = a["name"]
-            if self.quotas.get(agent_name, 0) <= 0:
-                continue
-            if agent_name in self.hand_queue:
-                score, breakdown = self._compute_hand_raise_score(agent_name)
-                self.hand_raise_scores[agent_name] = breakdown
-                if score >= HAND_RAISE_THRESHOLD:
-                    candidates.append((score, agent_name))
-        
-        # Sort by score descending
-        candidates.sort(key=lambda x: (-x[0], self._token_distance(x[1])))
-        return candidates
-
-    def maybe_raise_hand(self, agent):
-        """
-        Raise hand based on score rather than random probability.
-        """
-        # Prevent immediate self re-queue right after speaking.
-        if self.last_spoke.get(agent) == self.turn:
-            return
-
-        score, breakdown = self._compute_hand_raise_score(agent)
-        self.hand_raise_scores[agent] = breakdown
-        if score >= HAND_RAISE_THRESHOLD and agent not in self.hand_queue:
-            self.hand_queue.append(agent)
-
-    def enqueue_interrupts(self, speaker):
-        """
-        Compute interrupt scores for all agents and queue those above threshold.
-        """
-        for a in self.agents:
-            agent = a["name"]
-            if agent == speaker or self.quotas[agent] <= 0:
-                continue
-
-            score, breakdown = self._compute_hand_raise_score(agent)
-            self.hand_raise_scores[agent] = breakdown
-            
-            starved = (self.turn - self.last_spoke[agent]) >= STARVATION_THRESHOLD
-            turns_since_spoke = self.turn - self.last_spoke.get(agent, -1)
-            # Throttle auto-queueing so queue doesn't become permanently saturated.
-            if starved or (score >= HAND_RAISE_THRESHOLD and turns_since_spoke >= 2):
-                if agent not in self.hand_queue:
-                    self.hand_queue.append(agent)
-
-    # --------------------------------------------
-    # PRIORITY ORDER
-    # --------------------------------------------
-
-    def select_next_agent(self):
-        live_agents = [a["name"] for a in self.agents if self.quotas[a["name"]] > 0]
-        if not live_agents and not self.human_hand_raised:
+    def _extract_json_object_loose(self, raw_text):
+        cleaned = (raw_text or "").strip()
+        if not cleaned:
             return None
-
-        # Score-based selection from hand_queue
-        if self.hand_queue:
-            ordered_candidates = [
-                a for a in list(self.hand_queue) if a == HUMAN_NAME or self.quotas[a] > 0
-            ]
-            # Human is prioritized only when they naturally reach the front of queue.
-            if (
-                ordered_candidates
-                and ordered_candidates[0] == HUMAN_NAME
-                and self.human_hand_raised
-            ):
-                self.hand_queue = deque([a for a in self.hand_queue if a != HUMAN_NAME])
-                self.human_hand_raised = False
-                self.last_selection_reason = "Human turn reached front of hand queue"
-                return HUMAN_NAME
-
-            # Until Human reaches front, keep Human in queue and score-select agents.
-            candidates = [a for a in ordered_candidates if a != HUMAN_NAME]
-            if candidates:
-                # Re-compute fresh scores for ALL candidates before selecting
-                scored_candidates = []
-                for candidate in candidates:
-                    score, breakdown = self._compute_hand_raise_score(candidate)
-                    self.agent_scores[candidate] = score
-                    self.hand_raise_scores[candidate] = breakdown
-                    scored_candidates.append((score, candidate))
-                
-                scored_candidates.sort(key=lambda x: (-x[0], self._token_distance(x[1])))
-                agent = scored_candidates[0][1]
-                agent_score = scored_candidates[0][0]
-                
-                self.hand_queue = deque([a for a in self.hand_queue if a != agent])
-                self.last_selection_reason = f"Hand-raise queue: {agent} raised hand with score {agent_score:.1%}"
-                self.current_index = (self._agent_index(agent) + 1) % len(self.agents)
-                return agent
-
-        # Starvation protection fallback: only after queue-scoring is exhausted.
-        # Cooldown prevents immediate re-selection from starvation.
-        recent_speakers = {
-            r.get("agent")
-            for r in self.responses[-STARVATION_COOLDOWN_TURNS:]
-            if r.get("agent")
-        }
-        starved_agents = [
-            a
-            for a in live_agents
-            if (self.turn - self.last_spoke[a]) >= STARVATION_THRESHOLD and a not in recent_speakers
-        ]
-        if starved_agents:
-            chosen = sorted(
-                starved_agents,
-                key=lambda a: (self.turn - self.last_spoke[a], -self._token_distance(a)),
-                reverse=True,
-            )[0]
-            self._push_facilitator_event(
-                "anti_starvation",
-                f"Prioritized {chosen} due to starvation protection.",
-            )
-            score, breakdown = self._compute_hand_raise_score(chosen)
-            self.agent_scores[chosen] = score
-            self.hand_raise_scores[chosen] = breakdown
-            self.last_selection_reason = (
-                f"Starvation fallback ({STARVATION_COOLDOWN_TURNS}-turn cooldown): "
-                f"{chosen} starved for {self.turn - self.last_spoke[chosen]} turns"
-            )
-            self.current_index = (self._agent_index(chosen) + 1) % len(self.agents)
-            return chosen
-
-        # Round-robin fallback: use true round-robin if no agent qualifies threshold
-        # Otherwise use score-based selection
-        fallback_candidates = []
-        for i in range(len(self.agents)):
-            idx = (self.current_index + i) % len(self.agents)
-            agent = self.agents[idx]["name"]
-
-            if self.quotas[agent] > 0:
-                score, breakdown = self._compute_hand_raise_score(agent)
-                self.agent_scores[agent] = score
-                self.hand_raise_scores[agent] = breakdown
-                fallback_candidates.append((score, agent, idx))
-        
-        if fallback_candidates:
-            # Check if ANY agent qualifies (score >= threshold)
-            qualified = [c for c in fallback_candidates if c[0] >= HAND_RAISE_THRESHOLD]
-            
-            if qualified:
-                # SCORE-BASED: Select highest scorer who meets threshold
-                qualified.sort(key=lambda x: (-x[0], self._token_distance(x[1])))
-                agent = qualified[0][1]
-                agent_score = qualified[0][0]
-                self.last_selection_reason = f"Score-based: {agent} qualifies with {agent_score:.1%} (threshold: {HAND_RAISE_THRESHOLD:.1%})"
-            else:
-                # ROUND-ROBIN: No one qualifies, use pure round-robin order
-                # (preserve current_index for fair rotation)
-                agent = fallback_candidates[0][1]
-                agent_score = fallback_candidates[0][0]
-                self.last_selection_reason = f"Round-robin (all below {HAND_RAISE_THRESHOLD:.1%} threshold): {agent}'s turn ({agent_score:.1%})"
-                
-            self.current_index = (self._agent_index(agent) + 1) % len(self.agents)
-            return agent
-
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```[a-zA-Z0-9_-]*", "", cleaned).strip()
+            cleaned = re.sub(r"```$", "", cleaned).strip()
+        code_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
+        if code_match:
+            try:
+                parsed = json.loads(code_match.group(1))
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        candidate = cleaned[start : end + 1]
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            return None
         return None
+
+    def _parse_priority_rank(self, value):
+        if value is None:
+            return 3, "medium"
+        text = str(value).strip().lower()
+        name_map = {"high": 1, "medium": 2, "low": 3}
+        if text in name_map:
+            return name_map[text], text
+        match = re.search(r"\d+", text)
+        if match:
+            n = max(1, min(5, int(match.group(0))))
+            return n, f"p{n}"
+        return 3, "medium"
+
+    def _parse_intent_response(self, raw_text):
+        parsed = self._extract_json_object_loose(raw_text)
+        if not isinstance(parsed, dict):
+            return {"hand_raise": False, "priority_rank": 3, "priority_label": "medium", "pointer": "", "confidence": 0.0}
+        hand_raise = parsed.get("hand_raise", False)
+        if isinstance(hand_raise, str):
+            hand_raise = hand_raise.strip().lower() in {"true", "yes", "1"}
+        rank, label = self._parse_priority_rank(parsed.get("priority"))
+        pointer = str(parsed.get("pointer", "")).strip()
+        try:
+            confidence = float(parsed.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        confidence = max(0.0, min(1.0, confidence))
+        return {
+            "hand_raise": bool(hand_raise),
+            "priority_rank": rank,
+            "priority_label": label,
+            "pointer": pointer,
+            "confidence": confidence,
+        }
+
+    def _broadcast_for_queue(self):
+        memory_block = self._memory_snapshot_text()
+        recent = [r for r in self.responses if r.get("accepted")][-RECENT_TURNS_IN_CONTEXT:]
+        recent_block = "\n".join(f"- {r['agent']}: {self._short_text(r['text'], 220)}" for r in recent) or "- (none yet)"
+        human_instruction = self.pending_human_instruction or ""
+        redirect = self.pending_redirect["message"] if self.pending_redirect and self.pending_redirect["remaining"] > 0 else ""
+
+        intents = []
+        for agent in self.agents:
+            name = agent["name"]
+            if self.quotas.get(name, 0) <= 0:
+                continue
+            section_header = SECTION_HEADERS.get(agent.get("section", DEFAULT_SECTION), SECTION_HEADERS[DEFAULT_SECTION])
+            prompt = f"""
+You are {name} in a distributed reasoning protocol.
+{section_header}
+
+Original problem:
+{self.question}
+
+Shared memory state:
+{memory_block}
+
+Recent accepted turns:
+{recent_block}
+
+Human instruction:
+{human_instruction or "(none)"}
+
+Redirect:
+{redirect or "(none)"}
+
+Decide if you should raise hand NOW and return ONLY JSON:
+{{
+  "hand_raise": true/false,
+  "priority": "high|medium|low OR 1..5",
+  "pointer": "specific gap/risk/decision you will address next",
+  "confidence": 0.0 to 1.0
+}}
+"""
+            raw = ""
+            for _ in range(2):
+                try:
+                    raw = call_model(
+                        agent["model"],
+                        [{"role": "system", "content": "Return strict JSON only."}, {"role": "user", "content": prompt}],
+                        max_tokens=260,
+                        temperature=0.1,
+                    )
+                except Exception:
+                    raw = ""
+                intent = self._parse_intent_response(raw)
+                if intent["hand_raise"] or intent["pointer"]:
+                    break
+            intent = self._parse_intent_response(raw)
+            if intent["hand_raise"] and intent["pointer"]:
+                intents.append({"agent": name, **intent})
+
+        intents.sort(key=lambda x: (x["priority_rank"], -x["confidence"], x["agent"]))
+        self.intent_queue = deque(intents)
+        self.hand_queue = deque([x["agent"] for x in intents])
+        self.last_selection_reason = f"Broadcast produced {len(intents)} raised hands."
+        self.pending_human_instruction = None
+
+    def _pick_bootstrap_agent(self):
+        eligible = [a["name"] for a in self.agents if self.quotas.get(a["name"], 0) > 0]
+        if not eligible:
+            return None
+        chosen = random.choice(eligible)
+        self.last_selection_reason = f"Bootstrap random first turn: {chosen}"
+        return {
+            "agent": chosen,
+            "pointer": "",
+            "priority_label": "bootstrap",
+            "priority_rank": None,
+            "confidence": None,
+            "hand_raise": False,
+        }
+
+    def _next_from_queue_or_broadcast(self):
+        while self.intent_queue:
+            item = self.intent_queue.popleft()
+            if item["agent"] == HUMAN_NAME:
+                self.hand_queue = deque([x for x in self.hand_queue if x != HUMAN_NAME])
+                return {
+                    "agent": HUMAN_NAME,
+                    "pointer": "",
+                    "priority_label": "human",
+                    "priority_rank": 99,
+                    "confidence": 1.0,
+                    "hand_raise": True,
+                }
+            if self.quotas.get(item["agent"], 0) > 0:
+                self.hand_queue = deque([x["agent"] for x in self.intent_queue if x["agent"] != HUMAN_NAME] + ([HUMAN_NAME] if HUMAN_NAME in self.hand_queue else []))
+                self.last_selection_reason = (
+                    f"Queue selection: {item['agent']} ({item['priority_label']}, {item['confidence']:.2f})"
+                )
+                return dict(item)
+        self._broadcast_for_queue()
+        while self.intent_queue:
+            item = self.intent_queue.popleft()
+            if self.quotas.get(item["agent"], 0) > 0:
+                self.hand_queue = deque([x["agent"] for x in self.intent_queue] + ([HUMAN_NAME] if HUMAN_NAME in self.hand_queue else []))
+                self.last_selection_reason = (
+                    f"Broadcast selection: {item['agent']} ({item['priority_label']}, {item['confidence']:.2f})"
+                )
+                return dict(item)
+        fallback = self._pick_bootstrap_agent()
+        if fallback:
+            self.last_selection_reason = f"Fallback random selection: {fallback['agent']}"
+        return fallback
 
     # --------------------------------------------
     # STEP
@@ -1003,9 +894,14 @@ Instructions:
                 **self._state_payload(),
             }
 
-        agent_name = self.select_next_agent()
+        selected = None
+        if not self.bootstrap_done:
+            selected = self._pick_bootstrap_agent()
+            self.bootstrap_done = True
+        else:
+            selected = self._next_from_queue_or_broadcast()
 
-        if not agent_name:
+        if not selected:
             return {
                 "status": "done",
                 "agent": "System",
@@ -1014,9 +910,13 @@ Instructions:
                 "round": self.turn,
                 **self._state_payload(),
             }
+        agent_name = selected["agent"]
+        pointer_text = selected.get("pointer", "")
+        intent_priority = selected.get("priority_label", "bootstrap")
+        intent_priority_rank = selected.get("priority_rank", None)
+        intent_confidence = selected.get("confidence", None)
+        intent_hand_raise = selected.get("hand_raise", None)
 
-        # Once selected, remove agent from hand queue regardless of selection path
-        # (starvation, score-based queue, round-robin fallback, or human hand-raise).
         self.hand_queue = deque([a for a in self.hand_queue if a != agent_name])
 
         if agent_name == HUMAN_NAME:
@@ -1033,7 +933,7 @@ Instructions:
 
         model = next(a["model"] for a in self.agents if a["name"] == agent_name)
 
-        context = self.build_context(agent_name)
+        context = self.build_context(agent_name, pointer_text=pointer_text, consume_human_instruction=False)
 
         messages = [
             {"role": "system", "content": context},
@@ -1070,6 +970,11 @@ Instructions:
                 "ignored_reason": reason,
                 "quota_left": self.quotas[agent_name],
                 "queued_interrupts": list(self.hand_queue),
+                "intent_pointer": pointer_text,
+                "intent_priority": intent_priority,
+                "intent_priority_rank": intent_priority_rank,
+                "intent_confidence": intent_confidence,
+                "intent_hand_raise": intent_hand_raise,
                 **self._state_payload(),
             }
         except Exception as e:
@@ -1099,11 +1004,14 @@ Instructions:
                 "ignored_reason": reason,
                 "quota_left": self.quotas[agent_name],
                 "queued_interrupts": list(self.hand_queue),
+                "intent_pointer": pointer_text,
+                "intent_priority": intent_priority,
+                "intent_priority_rank": intent_priority_rank,
+                "intent_confidence": intent_confidence,
+                "intent_hand_raise": intent_hand_raise,
                 **self._state_payload(),
             }
 
-        # If a human control command arrived while this model call was in-flight,
-        # do not emit/process the model output.
         if self.stopped_by_human:
             return {
                 "status": "done",
@@ -1167,9 +1075,6 @@ Instructions:
 
         self.responses.append(entry)
         
-        # Update agent success rate
-        self._update_agent_success_rate(agent_name, ignored_reason is None)
-
         if ignored_reason:
             ignored_entry = {
                 "turn": self.turn,
@@ -1219,17 +1124,7 @@ Instructions:
             self.last_speaker = agent_name
             self.repeat_streak = 1
 
-        self.maybe_raise_hand(agent_name)
-        self.enqueue_interrupts(agent_name)
-
         self.turn += 1
-        
-        # Recalculate all scores after this turn so UI shows current values
-        for agent in self.agents:
-            agent_name_iter = agent["name"]
-            score, breakdown = self._compute_hand_raise_score(agent_name_iter)
-            self.agent_scores[agent_name_iter] = score
-            self.hand_raise_scores[agent_name_iter] = breakdown
 
         return {
             "status": "ok",
@@ -1241,6 +1136,11 @@ Instructions:
             "ignored_reason": ignored_reason,
             "quota_left": self.quotas[agent_name],
             "queued_interrupts": list(self.hand_queue),
+            "intent_pointer": pointer_text,
+            "intent_priority": intent_priority,
+            "intent_priority_rank": intent_priority_rank,
+            "intent_confidence": intent_confidence,
+            "intent_hand_raise": intent_hand_raise,
             **self._state_payload(),
         }
 
@@ -1270,11 +1170,13 @@ Instructions:
             "text": msg,
         }
         self.responses.append(entry)
+        self._broadcast_for_queue()
         return entry
 
     def raise_human_hand(self):
         if HUMAN_NAME not in self.hand_queue:
             self.hand_queue.append(HUMAN_NAME)
+            self.intent_queue.append({"agent": HUMAN_NAME, "pointer": "", "priority_rank": 99, "priority_label": "human", "confidence": 1.0, "hand_raise": True})
         self.human_hand_raised = True
         self._push_facilitator_event("human_hand_raise", "Human raised hand for turn.")
         return {
@@ -1297,7 +1199,6 @@ Instructions:
         self.last_speaker = HUMAN_NAME
         self.repeat_streak = 1
 
-        self.enqueue_interrupts(HUMAN_NAME)
         self.awaiting_human_turn = False
         self.turn += 1
 
@@ -1341,9 +1242,11 @@ Instructions:
         self.last_speaker = HUMAN_NAME
         self.repeat_streak = 1
 
-        self.enqueue_interrupts(HUMAN_NAME)
         self.awaiting_human_turn = False
         self.turn += 1
+
+        if action in ("inject", "redirect"):
+            self._broadcast_for_queue()
 
         return {
             "status": "ok",
@@ -1368,6 +1271,7 @@ Instructions:
             "text": f"REDIRECT ({self.pending_redirect['remaining']} turns): {msg}",
         }
         self.responses.append(entry)
+        self._broadcast_for_queue()
         return entry
 
     def approve_finalization(self):

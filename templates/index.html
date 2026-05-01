@@ -10,7 +10,6 @@
 <body>
     <button class="models-toggle" onclick="toggleModelsDrawer()">Models</button>
     <button class="memory-toggle" onclick="toggleMemoryDrawer()">Memory</button>
-    <button class="scores-toggle" onclick="toggleScoresDrawer()">Protocol Scores</button>
     <button class="queue-toggle" onclick="toggleQueueDrawer()">Hand Queue</button>
 
     <aside id="models-drawer" class="models-drawer">
@@ -42,16 +41,6 @@
             <div id="memory-view"></div>
             <h3>Context Preview</h3>
             <pre id="context-view" class="context-view">(no context yet)</pre>
-        </div>
-    </aside>
-
-    <aside id="scores-drawer" class="scores-drawer-panel">
-        <div class="memory-header">
-            <h2>Protocol Scores</h2>
-            <button class="btn btn-muted" onclick="toggleScoresDrawer()">Close</button>
-        </div>
-        <div class="memory-content">
-            <div id="scores-list" class="scores-list"></div>
         </div>
     </aside>
 

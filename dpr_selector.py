@@ -94,10 +94,10 @@ def _heuristic_suggest_models_for_question(question):
     if programming_hits and not education_hits:
         section = "programming"
         model_order = [
-            "qwen/qwen3-32b",
             "openai/gpt-oss-120b",
             "llama-3.3-70b-versatile",
             "moonshotai/kimi-k2-instruct",
+            "openai/gpt-oss-20b",
         ]
     elif education_hits and not programming_hits:
         section = "education"

@@ -261,7 +261,6 @@ button:hover {
 
 .memory-toggle,
 .models-toggle,
-.scores-toggle,
 .queue-toggle {
     position: fixed;
     z-index: 20;
@@ -285,19 +284,13 @@ button:hover {
     left: 16px;
 }
 
-.scores-toggle {
-    top: 116px;
-    left: 16px;
-}
-
 .queue-toggle {
-    top: 166px;
+    top: 116px;
     left: 16px;
 }
 
 .memory-drawer,
 .models-drawer,
-.scores-drawer-panel,
 .queue-drawer-panel {
     position: fixed;
     top: 0;
@@ -319,17 +312,6 @@ button:hover {
 }
 
 .memory-drawer.open {
-    transform: translateX(0);
-}
-
-.scores-drawer-panel {
-    left: 0;
-    border-right: 1px solid #e1c8ad;
-    transform: translateX(-105%);
-    z-index: 29;
-}
-
-.scores-drawer-panel.open {
     transform: translateX(0);
 }
 
@@ -447,15 +429,6 @@ button:hover {
     text-align: left;
     direction: ltr;
     backdrop-filter: none;
-}
-
-.scores-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 8px;
-    padding: 0 12px;
-    max-height: 140px;
-    overflow-y: auto;
 }
 
 .queue-track {
