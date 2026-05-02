@@ -798,10 +798,19 @@ async function loop() {
         const candidate = data.finalization_candidate || {}
         if (candidate.text) {
             const candidateClass = (candidate.agent || "system").replace(" ", "").toLowerCase()
+            const candidateDetailsPayload = {
+                ...data,
+                agent: candidate.agent || "Agent",
+                agent_model: candidate.model || "n/a",
+                text: candidate.text,
+            }
             addMessage(
                 candidateClass,
                 `${formatAgentHeading(candidate.agent || "Agent", candidate.model)}\n\n${candidate.text}`,
-                { bubbleBackground: getAgentBubble(candidate.agent || "Agent") }
+                {
+                    bubbleBackground: getAgentBubble(candidate.agent || "Agent"),
+                    turnDetails: buildTurnDetails(candidateDetailsPayload),
+                }
             )
         }
         addSystem(

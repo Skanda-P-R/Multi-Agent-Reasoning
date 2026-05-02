@@ -1093,7 +1093,6 @@ Rules:
         selected = None
         if not self.bootstrap_done:
             selected = self._pick_bootstrap_agent()
-            self.bootstrap_done = True
         else:
             selected = self._next_from_queue_or_broadcast()
 
@@ -1284,6 +1283,8 @@ Rules:
             if pointer_text:
                 self.pointer_history.append(pointer_text)
                 self.pointer_history = self.pointer_history[-8:]
+            if not self.bootstrap_done:
+                self.bootstrap_done = True
 
         if final_design_complete:
             # Per DPR principles: Only allow completion when ALL agents have participated
@@ -1311,6 +1312,15 @@ Rules:
                     "text": "Completion candidate raised. Human approval required.",
                     "round": self.turn,
                     "finalization_candidate": self.finalization_candidate,
+                    "ignored": bool(ignored_reason),
+                    "ignored_reason": ignored_reason,
+                    "quota_left": self.quotas.get(agent_name),
+                    "queued_interrupts": list(self.hand_queue),
+                    "intent_pointer": pointer_text,
+                    "intent_priority": intent_priority,
+                    "intent_priority_rank": intent_priority_rank,
+                    "intent_confidence": intent_confidence,
+                    "intent_hand_raise": intent_hand_raise,
                     **self._state_payload(),
                 }
 
