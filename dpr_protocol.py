@@ -8,6 +8,7 @@ from collections import deque
 import requests
 from dpr_constants import (
     AVAILABLE_MODELS,
+    BROADCAST_CALL_DELAY_SECONDS,
     DECISION_START_VERBS,
     DEFAULT_AGENT_MODELS,
     DEFAULT_SECTION,
@@ -28,6 +29,7 @@ from dpr_constants import (
     SECTION_HEADERS,
     SECTION_PRIORITY_HINTS,
     STARTING_QUOTA,
+    TURN_CALL_DELAY_SECONDS,
 )
 from dpr_model_client import call_model
 from dpr_selector import suggest_models_for_question
@@ -906,6 +908,7 @@ Rules:
             raw = ""
             for _ in range(2):
                 try:
+                    time.sleep(BROADCAST_CALL_DELAY_SECONDS)
                     raw = call_model(
                         agent["model"],
                         [{"role": "system", "content": "Return strict JSON only."}, {"role": "user", "content": prompt}],
@@ -1136,6 +1139,7 @@ Rules:
         ]
 
         try:
+            time.sleep(TURN_CALL_DELAY_SECONDS)
             answer = call_model(model, messages, max_tokens=None)
         except requests.HTTPError as e:
             status_code = e.response.status_code if e.response is not None else "unknown"
