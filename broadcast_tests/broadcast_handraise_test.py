@@ -17,6 +17,9 @@ from dpr_constants import DEFAULT_AGENT_MODELS, DEFAULT_SECTION  # noqa: E402
 from dpr_model_client import call_model  # noqa: E402
 
 
+# --------------------------------------------
+# INTENT PARSING HELPERS
+# --------------------------------------------
 def extract_json_object_loose(raw_text):
     cleaned = (raw_text or "").strip()
     if not cleaned:
@@ -202,6 +205,9 @@ def parse_intent(raw_text):
     return fallback
 
 
+# --------------------------------------------
+# SCORING / PROMPT BUILDERS
+# --------------------------------------------
 def lexical_novelty_score(pointer, recent_turns):
     ptr = (pointer or "").strip().lower()
     if not ptr:

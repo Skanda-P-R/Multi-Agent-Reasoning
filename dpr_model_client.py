@@ -5,6 +5,9 @@ import requests
 from dpr_constants import API_URL
 
 
+# --------------------------------------------
+# MODEL API CALLER
+# --------------------------------------------
 def call_model(model, messages, max_tokens=None, temperature=0.6):
     api_key = os.getenv("GROQ_API_KEY", "").strip()
 
