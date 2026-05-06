@@ -1,75 +1,97 @@
-# Distributed Protocol for Reasoning (DPR)
+# Distributed Protocol for Reasoning (DPR) - Phase 3
 
-This project is a web-based implementation of a **Distributed Protocol for Reasoning (DPR)** with multi-agent turn-taking and human governance controls.
+This branch is the **Phase-3 implementation** of DPR.
 
-It runs a shared reasoning session across 4 agents and provides a live console for:
+It includes:
 
-- start / pause / resume
-- human inject instructions
-- human redirect objective (for N turns)
-- visible protocol metadata (ignored responses, quota, hand-queue)
+- modular protocol engine (core session + mixins)
+- broadcast-driven hand-raise intent queue
+- starvation fallback selection
+- shared structured memory with context synthesis
+- human-in-the-loop turns and finalization governance
+- model panel configuration and model suggestion APIs
 
 ---
 
-## Current Architecture
+## Architecture
 
 ### Backend
 
-- `app.py` — Flask API + session lifecycle
-- `dpr_protocol.py` — DPR protocol engine (`DPRSession`)
+- `app.py` - Flask API routes and session lifecycle
+- `dpr_protocol.py` - `DPRSession` orchestrator (main loop + human controls)
+- `dpr_memory_mixin.py` - memory extraction, merge, and context building
+- `dpr_intent_mixin.py` - broadcast, intent parsing, queue selection logic
+- `dpr_selector.py` - question-based model panel suggestion (LLM + heuristic fallback)
+- `dpr_model_client.py` - Groq model API caller
+- `dpr_constants.py` - model catalog and protocol constants
 
 ### Frontend
 
-- `templates/index.html` — console layout
-- `static/app.js` — UI actions + polling loop
-- `static/style.css` — styling
-
-### Config / Safety
-
-- `.env.example` — Sample API key config
-- `.gitignore` — excludes `.env` and Python cache files
+- `templates/index.html`
+- `static/app.js`
+- `static/style.css`
 
 ---
 
-## Protocol Features Implemented
+## Phase-3 Protocol Capabilities
 
-### Phase 1 Core
-
-- Talking-stick style sequencing (round-robin base)
-- Basic fairness / sequencing controls
-- Human console commands: **PAUSE**, **RESUME**, **INJECT**
-- Logged ignored responses (with reason)
-
-### Phase 2 Governance
-
-- Hand-raise interrupt queue
-- Quota-based contribution economy (`STARTING_QUOTA`)
-- Priority ordering using proximity-to-token for queued interrupts
-- Anti-starvation prioritization using `last_spoke` threshold
-
-### Facilitator Rules
-
-- Loop detection (normalized recent-response repeat check)
-- Fairness repeat-streak protection
-- Redirection support via human **REDIRECT** command
-- Facilitator event logging (`facilitator_log`)
+- Dynamic agent panel at session start (`selected_models` with section tags)
+- Model catalog and default panel exposure via `/models`
+- Model panel recommendation via `/suggest_models`
+- Queue-based next-speaker arbitration:
+  - consume queued intents first
+  - starvation selection for long-waiting agents
+  - broadcast if queue is empty
+  - fallback bootstrap when required
+- Quota-aware broadcast behavior:
+  - prompts include remaining quota
+  - low-quota agents are gated to high-value hand raises
+- Pointer-aware turn context:
+  - selected intent pointer is passed into context
+  - starvation-selected turns intentionally use empty pointer
+- Shared memory state:
+  - `facts`, `options`, `decisions`, `open_questions`, `actions`, `changelog`
+- Facilitator controls:
+  - loop filtering
+  - fairness repeat protection
+  - redirect handling across turns
+- Human governance:
+  - raise hand for direct human turn
+  - submit human reasoning turn
+  - submit human action turn (`inject` / `redirect`)
+  - approve or continue after finalization candidate
+- Rich state metadata in step responses:
+  - `selection_reason`
+  - `hand_raise_scores`
+  - `queued_interrupts`
+  - intent metadata (`intent_priority`, `intent_pointer`, etc.)
 
 ---
 
 ## API Endpoints
 
-- `POST /start` → start session with `{ "question": "..." }`
-- `POST /step` → run one protocol step
-- `POST /pause` → pause session
-- `POST /resume` → resume session
-- `POST /inject` → inject instruction `{ "message": "..." }`
-- `POST /redirect` → redirect objective `{ "message": "...", "turns": 3 }`
+- `GET /` - UI
+- `POST /start` - start session:
+  - body: `{ "question": "...", "models": [...] }`
+- `GET /models` - available models, default models, sections
+- `POST /suggest_models` - suggest model panel for a question
+- `POST /step` - execute one protocol step
+- `POST /pause` - pause session
+- `POST /resume` - resume session
+- `POST /set_models` - update active panel while paused
+- `POST /stop` - stop session
+- `POST /inject` - inject human instruction
+- `POST /raise_hand` - enqueue human hand raise
+- `POST /human_turn` - submit human turn / human action
+- `POST /redirect` - set redirect objective and duration
+- `POST /finalize/approve` - approve completion candidate
+- `POST /finalize/continue` - continue after completion candidate
 
 ---
 
 ## Setup
 
-### 1) Create & activate virtual environment (recommended)
+### 1) Create and activate virtual environment
 
 ```bash
 python -m venv venv
@@ -93,20 +115,22 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3) Configure Groq API key with `.env`
+`requirements.txt` includes:
 
-In `Multi-Agent-Reasoning/`:
+- `flask`
+- `requests`
+- `python-dotenv`
+
+### 3) Configure API key
 
 1. Copy `.env.example` to `.env`
-2. Edit `.env` and set:
+2. Set:
 
 ```env
 GROQ_API_KEY=gsk_your_actual_key_here
 ```
 
 ### 4) Run
-
-From `Multi-Agent-Reasoning/`:
 
 ```bash
 python app.py
@@ -116,20 +140,23 @@ Open: `http://127.0.0.1:5000`
 
 ---
 
-## Models (default)
+## Default Models (Phase-3)
 
-Configured in `dpr_protocol.py`:
+From `dpr_constants.py`:
 
-- Agent 1: `llama-3.3-70b-versatile`
-- Agent 2: `openai/gpt-oss-120b`
-- Agent 3: `moonshotai/kimi-k2-instruct`
-- Agent 4: `openai/gpt-oss-20b`
+- `llama-3.3-70b-versatile`
+- `openai/gpt-oss-120b`
+- `openai/gpt-oss-20b`
 
-You can modify the `AGENTS` list to change models.
+Available catalog additionally includes:
+
+- `llama-3.1-8b-instant`
+- `groq/compound-mini`
+- `openai/gpt-oss-safeguard-20b`
 
 ---
 
 ## Notes
 
-- This uses Flask dev server (`debug=True`) and is not production-ready.
-- Keep `.env` private and never commit real API keys.
+- This runs with Flask dev server (`debug=True`)
+- Keep `.env` private and never commit real API keys
