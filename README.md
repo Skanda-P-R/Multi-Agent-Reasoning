@@ -1,75 +1,86 @@
-# Distributed Protocol for Reasoning (DPR)
+# Distributed Protocol for Reasoning (DPR) - Phase 1
 
-This project is a web-based implementation of a **Distributed Protocol for Reasoning (DPR)** with multi-agent turn-taking and human governance controls.
+This branch contains the **Phase-1 implementation** of DPR: a 4-agent reasoning loop with facilitator controls and human intervention commands.
 
-It runs a shared reasoning session across 4 agents and provides a live console for:
+It supports:
 
-- start / pause / resume
-- human inject instructions
-- human redirect objective (for N turns)
-- visible protocol metadata (ignored responses, quota, hand-queue)
+- sequential multi-agent reasoning turns
+- quota-aware participation
+- hand-raise queue interrupts
+- anti-loop and fairness guards
+- human inject and redirect control
 
 ---
 
-## Current Architecture
+## What Phase-1 Includes
+
+- Fixed 4-agent panel in code (`AGENTS`)
+- Turn progression with round-robin base + interrupt handling
+- Quota economy (`STARTING_QUOTA = 8`)
+- Hand-raise behavior:
+  - random raise opportunity
+  - queue enqueue for potential interrupts
+- Anti-starvation prioritization using `last_spoke` + `STARVATION_THRESHOLD`
+- Loop detection using normalized recent accepted responses
+- Fairness repeat-streak limiter
+- Running summary memory (`self.summary`) built from recent accepted turns
+
+---
+
+## Architecture
 
 ### Backend
 
-- `app.py` - Flask API + session lifecycle
-- `dpr_protocol.py` - DPR protocol engine (`DPRSession`)
+- `app.py` - Flask API and session lifecycle
+- `dpr_protocol.py` - DPR protocol engine (`DPRSession`) and model call logic
 
 ### Frontend
 
-- `templates/index.html` - console layout
-- `static/app.js` - UI actions + polling loop
+- `templates/index.html` - DPR console UI
+- `static/app.js` - step loop + pause/resume/inject/redirect actions
 - `static/style.css` - styling
 
-### Config / Safety
+### Config
 
-- `.env.example` - Sample API key config
-- `.gitignore` - excludes `.env` and Python cache files
+- `.env.example` - sample environment file
+- `.gitignore` - excludes `.env` and cache files
 
 ---
 
-## Protocol Features Implemented
+## Core Protocol Behavior (Phase-1)
 
-### Phase 1 Core
-
-- Talking-stick style sequencing (round-robin base)
-- Basic fairness / sequencing controls
-- Human console commands: **PAUSE**, **RESUME**, **INJECT**
-- Logged ignored responses (with reason)
-
-### Phase 2 Governance
-
-- Hand-raise interrupt queue
-- Quota-based contribution economy (`STARTING_QUOTA`)
-- Priority ordering using proximity-to-token for queued interrupts
-- Anti-starvation prioritization using `last_spoke` threshold
-
-### Facilitator Rules
-
-- Loop detection (normalized recent-response repeat check)
-- Fairness repeat-streak protection
-- Redirection support via human **REDIRECT** command
-- Facilitator event logging (`facilitator_log`)
+- `/start` creates a session from a question
+- `/step` selects next agent and executes one reasoning turn
+- Context includes:
+  - original problem
+  - rolling summary
+  - optional human instruction
+  - optional redirect objective
+- Agent response can be ignored when:
+  - detected as a repeated loop
+  - same speaker exceeds repeat-streak fairness limit
+- Session ends when:
+  - model outputs `FINAL DESIGN COMPLETE`, or
+  - `MAX_TURNS` reached, or
+  - all quotas exhausted
 
 ---
 
 ## API Endpoints
 
-- `POST /start` -> start session with `{ "question": "..." }`
-- `POST /step` -> run one protocol step
-- `POST /pause` -> pause session
-- `POST /resume` -> resume session
-- `POST /inject` -> inject instruction `{ "message": "..." }`
-- `POST /redirect` -> redirect objective `{ "message": "...", "turns": 3 }`
+- `GET /` - UI
+- `POST /start` - start session with `{ "question": "..." }`
+- `POST /step` - run one protocol step
+- `POST /pause` - pause session
+- `POST /resume` - resume session
+- `POST /inject` - inject human instruction `{ "message": "..." }`
+- `POST /redirect` - set redirection objective `{ "message": "...", "turns": 3 }`
 
 ---
 
 ## Setup
 
-### 1) Create & activate virtual environment (recommended)
+### 1) Create and activate virtual environment
 
 ```bash
 python -m venv venv
@@ -93,20 +104,16 @@ source venv/bin/activate
 pip install flask requests python-dotenv
 ```
 
-### 3) Configure Groq API key with `.env`
-
-In `Multi-Agent-Reasoning/`:
+### 3) Configure API key
 
 1. Copy `.env.example` to `.env`
-2. Edit `.env` and set:
+2. Set:
 
 ```env
 GROQ_API_KEY=gsk_your_actual_key_here
 ```
 
 ### 4) Run
-
-From `Multi-Agent-Reasoning/`:
 
 ```bash
 python app.py
@@ -116,20 +123,18 @@ Open: `http://127.0.0.1:5000`
 
 ---
 
-## Models (default)
+## Default Agent Models (Phase-1)
 
-Configured in `dpr_protocol.py`:
+Defined in `dpr_protocol.py`:
 
 - Agent 1: `llama-3.3-70b-versatile`
 - Agent 2: `openai/gpt-oss-120b`
 - Agent 3: `moonshotai/kimi-k2-instruct`
 - Agent 4: `openai/gpt-oss-20b`
 
-You can modify the `AGENTS` list to change models.
-
 ---
 
 ## Notes
 
-- This uses Flask dev server (`debug=True`) and is not production-ready.
-- Keep `.env` private and never commit real API keys.
+- Uses Flask dev server (`debug=True`)
+- Keep `.env` private and never commit real API keys
