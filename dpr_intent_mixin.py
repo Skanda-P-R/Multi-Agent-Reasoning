@@ -11,6 +11,8 @@ from dpr_constants import (
     HUMAN_NAME,
     RECENT_TURNS_IN_CONTEXT,
     SECTION_HEADERS,
+    STARVATION_COOLDOWN_TURNS,
+    STARVATION_THRESHOLD,
     STARTING_QUOTA,
 )
 from dpr_model_client import call_model
@@ -397,6 +399,37 @@ Rules:
             "hand_raise": False,
         }
 
+    def _pick_starvation_agent(self):
+        queued_agents = {x.get("agent") for x in self.intent_queue if isinstance(x, dict)}
+        candidates = []
+        for agent in self.agents:
+            name = agent["name"]
+            if self.quotas.get(name, 0) <= 0:
+                continue
+            if name in queued_agents:
+                continue
+            last = self.last_spoke.get(name, -1)
+            turns_waited = self.turn - last if last >= 0 else self.turn + 1
+            if turns_waited >= STARVATION_THRESHOLD:
+                candidates.append((turns_waited, -self._token_distance(name), name))
+
+        if not candidates:
+            return None
+
+        candidates.sort(reverse=True)
+        turns_waited, _, chosen = candidates[0]
+        self.last_selection_reason = (
+            f"Starvation selection: {chosen} waited {turns_waited} turns (threshold={STARVATION_THRESHOLD}, cooldown={STARVATION_COOLDOWN_TURNS})."
+        )
+        return {
+            "agent": chosen,
+            "pointer": "",
+            "priority_label": "starvation",
+            "priority_rank": 0,
+            "confidence": 1.0,
+            "hand_raise": False,
+        }
+
     def _next_from_queue_or_broadcast(self):
         while self.intent_queue:
             item = self.intent_queue.popleft()
@@ -416,6 +449,9 @@ Rules:
                     f"Queue selection: {item['agent']} ({item['priority_label']}, {item['confidence']:.2f})"
                 )
                 return dict(item)
+        starvation_pick = self._pick_starvation_agent()
+        if starvation_pick:
+            return starvation_pick
         self._broadcast_for_queue()
         while self.intent_queue:
             item = self.intent_queue.popleft()
@@ -425,6 +461,9 @@ Rules:
                     f"Broadcast selection: {item['agent']} ({item['priority_label']}, {item['confidence']:.2f})"
                 )
                 return dict(item)
+        starvation_pick = self._pick_starvation_agent()
+        if starvation_pick:
+            return starvation_pick
         fallback = self._pick_bootstrap_agent()
         if fallback:
             self.last_selection_reason = f"Fallback random selection: {fallback['agent']}"
