@@ -1,0 +1,505 @@
+{
+  "question": "Design a campus waste-sorting system",
+  "agents": [
+    {
+      "name": "Agent 1",
+      "model": "llama-3.3-70b-versatile",
+      "section": "general"
+    },
+    {
+      "name": "Agent 2",
+      "model": "openai/gpt-oss-120b",
+      "section": "general"
+    },
+    {
+      "name": "Agent 3",
+      "model": "openai/gpt-oss-20b",
+      "section": "general"
+    }
+  ],
+  "cycles": 3,
+  "run_contribution": true,
+  "summary": {
+    "selected_counts": {
+      "Agent 1": 0,
+      "Agent 2": 2,
+      "Agent 3": 1
+    }
+  },
+  "history": [
+    {
+      "cycle": 1,
+      "intents": [
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.98,
+              "chars": 207
+            }
+          ],
+          "raw": "{\"hand_raise\": true, \"priority\": \"medium\", \"pointer\": \"campus waste-sorting system design\", \"value_add\": \"proposing a multi-stage sorting process with recycling and composting facilities\", \"confidence\": 0.8}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage sorting process with recycling and composting facilities",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.49,
+              "chars": 369
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"absence of a clear incentive and feedback mechanism for users\",\"value_add\":\"Propose a comprehensive campus waste-sorting system that includes waste stream categories, strategic bin placement, user education, real-time monitoring, and a gamified incentive/feedback loop to drive proper sorting behavior\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a clear incentive and feedback mechanism for users",
+            "value_add": "Propose a comprehensive campus waste-sorting system that includes waste stream categories, strategic bin placement, user education, real-time monitoring, and a gamified incentive/feedback loop to drive proper sorting behavior",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.94,
+              "chars": 294
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Define user interface and sensor integration for sorting guidance\",\"value_add\":\"Propose a modular sensor-based sorting system with AI-driven guidance, including real-time feedback and adaptive learning for campus waste streams\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface and sensor integration for sorting guidance",
+            "value_add": "Propose a modular sensor-based sorting system with AI-driven guidance, including real-time feedback and adaptive learning for campus waste streams",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "raised_queue": [
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a clear incentive and feedback mechanism for users",
+            "value_add": "Propose a comprehensive campus waste-sorting system that includes waste stream categories, strategic bin placement, user education, real-time monitoring, and a gamified incentive/feedback loop to drive proper sorting behavior",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface and sensor integration for sorting guidance",
+            "value_add": "Propose a modular sensor-based sorting system with AI-driven guidance, including real-time feedback and adaptive learning for campus waste streams",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage sorting process with recycling and composting facilities",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "selected": {
+        "agent": {
+          "name": "Agent 2",
+          "model": "openai/gpt-oss-120b",
+          "section": "general"
+        },
+        "extracted": {
+          "hand_raise": true,
+          "priority_rank": 1,
+          "priority_label": "high",
+          "pointer": "absence of a clear incentive and feedback mechanism for users",
+          "value_add": "Propose a comprehensive campus waste-sorting system that includes waste stream categories, strategic bin placement, user education, real-time monitoring, and a gamified incentive/feedback loop to drive proper sorting behavior",
+          "confidence": 0.85,
+          "parse_source": "json",
+          "novelty": 1.0
+        }
+      },
+      "contribution": "**Thinking through incentives and feedback for a campus waste\u2011sorting system**\n\n1. **Immediate, personal feedback at the point of disposal**  \n   - **Smart\u2011bin LEDs**: When a user places an item in the correct compartment, a green light flashes and a short audio cue (\u201cGreat job!\u201d) plays. A red light and a brief message (\u201cTry the recycling bin\u201d) appear for a mistake. The feedback is instant, reinforcing the correct habit before the user walks away.  \n   - **QR\u2011code \u201cthank\u2011you\u201d**: Each bin has a small QR code that, when scanned after a successful drop, instantly displays a personalized \u201cthank\u2011you\u201d screen on the user\u2019s phone, showing the type of material just recycled and the cumulative impact (e.g., \u201cYou just saved 0.3\u202fkg of CO\u2082\u201d). This creates a micro\u2011reward loop that ties the action to a visible outcome.\n\n2. **Gamified, campus\u2011wide \u201cSustainability Score\u201d**  \n   - **Points per item**: The smart\u2011bin network logs each correctly sorted item (anonymously linked to a campus ID card or app login). Users earn points based on the material\u2019s environmental value (e.g., 5\u202fpts for a plastic bottle, 2"
+    },
+    {
+      "cycle": 2,
+      "intents": [
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.41,
+              "chars": 256
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"medium\",\n  \"pointer\": \"Designing a user-friendly interface for the smart-bin network\",\n  \"value_add\": \"Integrating a machine learning model to provide personalized waste-sorting recommendations\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "Designing a user-friendly interface for the smart-bin network",
+            "value_add": "Integrating a machine learning model to provide personalized waste-sorting recommendations",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 0.3
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.69,
+              "chars": 353
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"high\",\n  \"pointer\": \"absence of a clear incentive and feedback mechanism for users\",\n  \"value_add\": \"Introduce a tiered incentive framework: (1) instant micro\u2011rewards via smart\u2011bin LEDs and QR\u2011code thank\u2011you messages; (2) cumulative digital badges and campus\u2011store discount coupons tied to points earned; (3) real\u2011",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a clear incentive and feedback mechanism for users",
+            "value_add": "Introduce a tiered incentive framework: (1) instant micro\u2011rewards via smart\u2011bin LEDs and QR\u2011code thank\u2011you messages; (2) cumulative digital badges and campus\u2011store discount coupons tied to points earned; (3) real\u2011",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.4
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.08,
+              "chars": 371
+            }
+          ],
+          "raw": "{\"hand_raise\": true,\"priority\": \"high\",\"pointer\": \"Design of data analytics pipeline for waste-sorting system to provide campus-level insights and optimize bin placement\",\"value_add\": \"Propose a modular data analytics architecture that aggregates bin data, uses machine learning to predict waste patterns, and informs campus waste management decisions\",\"confidence\": 0.8}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Design of data analytics pipeline for waste-sorting system to provide campus-level insights and optimize bin placement",
+            "value_add": "Propose a modular data analytics architecture that aggregates bin data, uses machine learning to predict waste patterns, and informs campus waste management decisions",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 0.5
+          }
+        }
+      ],
+      "raised_queue": [
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Design of data analytics pipeline for waste-sorting system to provide campus-level insights and optimize bin placement",
+            "value_add": "Propose a modular data analytics architecture that aggregates bin data, uses machine learning to predict waste patterns, and informs campus waste management decisions",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 0.5
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a clear incentive and feedback mechanism for users",
+            "value_add": "Introduce a tiered incentive framework: (1) instant micro\u2011rewards via smart\u2011bin LEDs and QR\u2011code thank\u2011you messages; (2) cumulative digital badges and campus\u2011store discount coupons tied to points earned; (3) real\u2011",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.4
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "Designing a user-friendly interface for the smart-bin network",
+            "value_add": "Integrating a machine learning model to provide personalized waste-sorting recommendations",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 0.3
+          }
+        }
+      ],
+      "selected": {
+        "agent": {
+          "name": "Agent 3",
+          "model": "openai/gpt-oss-20b",
+          "section": "general"
+        },
+        "extracted": {
+          "hand_raise": true,
+          "priority_rank": 1,
+          "priority_label": "high",
+          "pointer": "Design of data analytics pipeline for waste-sorting system to provide campus-level insights and optimize bin placement",
+          "value_add": "Propose a modular data analytics architecture that aggregates bin data, uses machine learning to predict waste patterns, and informs campus waste management decisions",
+          "confidence": 0.8,
+          "parse_source": "json",
+          "novelty": 0.5
+        }
+      },
+      "contribution": "**Data\u2011Analytics Pipeline Design for Campus\u2011Level Waste\u2011Sorting Insights**\n\nBelow is a concrete, end\u2011to\u2011end architecture that turns raw waste\u2011sorting data into actionable bin\u2011placement recommendations.  \nThe design is intentionally modular so that a fast prototype can be built, validated, and iterated on without locking the team into a single stack.\n\n---\n\n## 1. Data Sources\n\n| Source | Data Type | Frequency | Notes |\n|--------|-----------|-----------|-------|\n| **Smart Bin Sensors** (weight, fill level, RFID tags) | Numeric + categorical | 1\u202fmin | Use low\u2011power LoRaWAN or BLE. |\n| **Manual \u201cHand\u2011Raise\u201d Events** (students raising a hand to request a bin) | Event + timestamp | Real\u2011time | Capture via mobile app or campus kiosks. |\n| **Campus Calendar** (events, class schedules) | Calendar | Daily | Helps explain temporal spikes. |\n| **Campus Layout GIS** | Spatial | One\u2011time | Building footprints, pathways. |\n| **External Weather API** | Weather | Hourly | Temperature, precipitation affect waste patterns. |\n\n---\n\n## 2. Ingestion Layer\n\n1. **Message Queue**  \n   * **Kafka** (or Pulsar) for high\u2011throughput, fault\u2011tolerant streaming of sensor events and hand\u2011raise logs.  \n   * Topics: `bin-events`, `hand-raise`, `calendar`, `weather`.\n\n2. **Batch Loader**  \n   * **Apache NiFi** or **Airbyte** to pull calendar"
+    },
+    {
+      "cycle": 3,
+      "intents": [
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.09,
+              "chars": 385
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"medium\",\n  \"pointer\": \"Integration of user feedback and data analytics for optimized waste-sorting system design\",\n  \"value_add\": \"Proposing a user-centered design approach that incorporates feedback mechanisms and data-driven insights to improve the overall efficiency and effectiveness of the campus waste-sorting system\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "Integration of user feedback and data analytics for optimized waste-sorting system design",
+            "value_add": "Proposing a user-centered design approach that incorporates feedback mechanisms and data-driven insights to improve the overall efficiency and effectiveness of the campus waste-sorting system",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 0.154
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.5,
+              "chars": 0
+            },
+            {
+              "attempt": 2,
+              "status": "ok",
+              "elapsed_sec": 1.4,
+              "chars": 132
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"privacy and data governance for user-linked incentive system\",\"value_add\":\"propose a",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "privacy and data governance for user-linked incentive system",
+            "value_add": "propose a",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.333
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.13,
+              "chars": 0
+            },
+            {
+              "attempt": 2,
+              "status": "ok",
+              "elapsed_sec": 1.09,
+              "chars": 66
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"medium\",\"pointer\":\"Privacy and data",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "Privacy and data",
+            "value_add": "(not provided)",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.333
+          }
+        }
+      ],
+      "raised_queue": [
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "privacy and data governance for user-linked incentive system",
+            "value_add": "propose a",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.333
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "Integration of user feedback and data analytics for optimized waste-sorting system design",
+            "value_add": "Proposing a user-centered design approach that incorporates feedback mechanisms and data-driven insights to improve the overall efficiency and effectiveness of the campus waste-sorting system",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 0.154
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "Privacy and data",
+            "value_add": "(not provided)",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.333
+          }
+        }
+      ],
+      "selected": {
+        "agent": {
+          "name": "Agent 2",
+          "model": "openai/gpt-oss-120b",
+          "section": "general"
+        },
+        "extracted": {
+          "hand_raise": true,
+          "priority_rank": 1,
+          "priority_label": "high",
+          "pointer": "privacy and data governance for user-linked incentive system",
+          "value_add": "propose a",
+          "confidence": 0.0,
+          "parse_source": "salvaged_jsonish",
+          "novelty": 0.333
+        }
+      },
+      "contribution": "### Privacy\u2011Centric Incentive Layer for a Campus Waste\u2011Sorting System  \n\nBelow is a concrete, end\u2011to\u2011end design that ties user\u2011linked rewards to waste\u2011sorting actions **while guaranteeing privacy and robust data\u2011governance**.  The proposal is broken into four logical blocks that can be built, tested, and iterated independently:\n\n| Block | Goal | Core Technologies / Artefacts | Key Privacy Guarantees |\n|-------|------|------------------------------|------------------------|\n| **1\ufe0f\u20e3 Identity\u2011Lite On\u2011Boarding** | Give every participant a persistent, **non\u2011identifiable** token that can be used for rewards. | \u2022\u202fSelf\u2011issued Decentralised Identifier (DID) <br>\u2022\u202fVerifiable Credential (VC) \u201cCampus Member\u201d issued by the university\u2019s Identity Provider (IdP) <br>\u2022\u202fMobile\u2011app stored private key (Secure Enclave / Android Keystore) | \u2022\u202fNo personal data leaves the IdP. <br>\u2022\u202fToken is **pseudonymous** \u2013 it can be revoked or rotated without linking to the real person. |\n| **2\ufe0f\u20e3 Edge\u2011First Waste Event Capture** |"
+    }
+  ]
+}

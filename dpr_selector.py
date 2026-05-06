@@ -14,6 +14,9 @@ from dpr_constants import (
 )
 
 
+# --------------------------------------------
+# JSON PARSING HELPERS
+# --------------------------------------------
 def _extract_json_object_loose(raw_text):
     cleaned = (raw_text or "").strip()
     if not cleaned:
@@ -55,6 +58,9 @@ def _extract_json_object_loose(raw_text):
     return None
 
 
+# --------------------------------------------
+# HEURISTIC FALLBACK SELECTOR
+# --------------------------------------------
 def _heuristic_suggest_models_for_question(question):
     q = (question or "").lower()
 
@@ -94,10 +100,10 @@ def _heuristic_suggest_models_for_question(question):
     if programming_hits and not education_hits:
         section = "programming"
         model_order = [
-            "qwen/qwen3-32b",
             "openai/gpt-oss-120b",
             "llama-3.3-70b-versatile",
             "moonshotai/kimi-k2-instruct",
+            "openai/gpt-oss-20b",
         ]
     elif education_hits and not programming_hits:
         section = "education"
@@ -139,6 +145,9 @@ def _heuristic_suggest_models_for_question(question):
     }
 
 
+# --------------------------------------------
+# LLM-BASED SELECTOR CALL
+# --------------------------------------------
 def _call_selector_model_json(question, retry=False):
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
@@ -192,6 +201,9 @@ def _call_selector_model_json(question, retry=False):
     return msg.get("content", "")
 
 
+# --------------------------------------------
+# PUBLIC SELECTOR API
+# --------------------------------------------
 def suggest_models_for_question(question):
     question = (question or "").strip()
     if not question:

@@ -2,6 +2,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# --------------------------------------------
+# ENVIRONMENT / API CONFIG
+# --------------------------------------------
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -14,9 +17,11 @@ AVAILABLE_MODELS = [
     "openai/gpt-oss-20b",
     "groq/compound-mini",
     "openai/gpt-oss-safeguard-20b",
-    "qwen/qwen3-32b",
 ]
 
+# --------------------------------------------
+# DEFAULT PANEL CONFIG
+# --------------------------------------------
 DEFAULT_AGENT_MODELS = [
     "llama-3.3-70b-versatile",
     "openai/gpt-oss-120b",
@@ -31,8 +36,11 @@ SECTION_HEADERS = {
 }
 DEFAULT_SECTION = "general"
 
+# --------------------------------------------
+# PROTOCOL RUNTIME LIMITS
+# --------------------------------------------
 MAX_TURNS = 100
-STARTING_QUOTA = 15
+STARTING_QUOTA = 8
 REDIRECT_DURATION_TURNS = 3
 STARVATION_THRESHOLD = 6
 STARVATION_COOLDOWN_TURNS = 3
@@ -40,16 +48,24 @@ LOOP_WINDOW = 4
 MAX_REPEAT_STREAK = 2
 HUMAN_NAME = "Human"
 
+# --------------------------------------------
+# MEMORY / BROADCAST TUNING
+# --------------------------------------------
 MEMORY_MODEL = "groq/compound"
 MEMORY_SECTION_LIMIT = 12
 MEMORY_CHANGELOG_LIMIT = 20
 RECENT_TURNS_IN_CONTEXT = 2
 MAX_SUMMARY_TEXT_CHARS = 220
 MEMORY_CALL_DELAY_SECONDS = 0.5
+BROADCAST_CALL_DELAY_SECONDS = 0.5
+TURN_CALL_DELAY_SECONDS = 0.5
 MEMORY_ITEM_CHAR_LIMIT = 170
 MEMORY_SIMILARITY_THRESHOLD = 0.86
 MIN_PERSISTENT_OPEN_QUESTIONS = 2
 
+# --------------------------------------------
+# MEMORY PRIORITY HINTS
+# --------------------------------------------
 SECTION_PRIORITY_HINTS = {
     "facts": ["fact", "assumption", "constraint", "baseline", "capacity", "requirement"],
     "options": ["option", "proposal", "approach", "design", "architecture", "alternative"],
@@ -58,6 +74,9 @@ SECTION_PRIORITY_HINTS = {
     "actions": ["action", "next step", "owner", "deadline", "implement", "generate", "run"],
 }
 
+# --------------------------------------------
+# DECISION INFERENCE SIGNALS
+# --------------------------------------------
 DECISION_START_VERBS = {
     "deploy",
     "use",
@@ -74,6 +93,9 @@ DECISION_START_VERBS = {
     "establish",
 }
 
+# --------------------------------------------
+# LEGACY / SCORING WEIGHTS
+# --------------------------------------------
 HAND_RAISE_THRESHOLD = 0.40
 RELEVANCE_WEIGHT = 0.30
 NOVELTY_WEIGHT = 0.25

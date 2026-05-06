@@ -8,11 +8,17 @@ from dpr_protocol import (
     suggest_models_for_question,
 )
 
+# --------------------------------------------
+# APP SETUP
+# --------------------------------------------
 app = Flask(__name__)
 
 session = None
 
 
+# --------------------------------------------
+# INTERNAL HELPERS
+# --------------------------------------------
 def _require_session():
     if not session:
         return jsonify({"status": "error", "error": "no session"}), 400
@@ -24,6 +30,9 @@ def index():
     return render_template("index.html")
 
 
+# --------------------------------------------
+# SESSION LIFECYCLE ROUTES
+# --------------------------------------------
 @app.route("/start", methods=["POST"])
 def start():
 
@@ -139,6 +148,9 @@ def stop():
     })
 
 
+# --------------------------------------------
+# HUMAN INTERVENTION ROUTES
+# --------------------------------------------
 @app.route("/inject", methods=["POST"])
 def inject():
     missing = _require_session()
@@ -204,6 +216,9 @@ def redirect():
     return jsonify({"status": "ok", "log": result})
 
 
+# --------------------------------------------
+# FINALIZATION ROUTES
+# --------------------------------------------
 @app.route("/finalize/approve", methods=["POST"])
 def finalize_approve():
     missing = _require_session()
@@ -238,5 +253,8 @@ def finalize_continue():
     return jsonify(result)
 
 
+# --------------------------------------------
+# DEV ENTRYPOINT
+# --------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)

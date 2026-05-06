@@ -16,8 +16,6 @@ let approvedSuggestedModels = null
 let agentModelMap = {}
 let agentColorMap = {}
 let loopEpoch = 0
-let agentScores = {}
-let handRaiseScores = {}
 let handQueue = []
 
 const chat = document.getElementById("chat")
@@ -29,7 +27,6 @@ const modelsDrawer = document.getElementById("models-drawer")
 const modelsList = document.getElementById("models-list")
 const modelCount = document.getElementById("model-count")
 const memoryDrawer = document.getElementById("memory-drawer")
-const scoresDrawer = document.getElementById("scores-drawer")
 const queueDrawer = document.getElementById("queue-drawer")
 const memoryView = document.getElementById("memory-view")
 const contextView = document.getElementById("context-view")
@@ -168,8 +165,34 @@ function toPercent(value) {
 
 function buildTurnDetails(data) {
     const agent = data.agent || "Unknown"
-    const breakdown = handRaiseScores[agent] || {}
-    const score = agentScores[agent]
+    const hasIntentConfidence = data.intent_confidence !== null && typeof data.intent_confidence !== "undefined"
+    const intentPriorityRaw = (data.intent_priority || "").toString().toLowerCase()
+    const isBootstrap = intentPriorityRaw === "bootstrap"
+    const isHumanIntent = intentPriorityRaw === "human"
+
+    const intentHandRaiseText = isBootstrap
+        ? "Bootstrap turn"
+        : (typeof data.intent_hand_raise === "boolean" ? (data.intent_hand_raise ? "Yes" : "No") : "Not applicable")
+
+    const intentPriorityText = isBootstrap
+        ? "Bootstrap turn"
+        : (isHumanIntent ? "Human queue turn" : (data.intent_priority || "Not applicable"))
+
+    const intentPriorityRankText = isBootstrap
+        ? "Not applicable"
+        : (typeof data.intent_priority_rank === "number" ? data.intent_priority_rank : "Not applicable")
+
+    const intentConfidenceText = isBootstrap
+        ? "Not applicable"
+        : (hasIntentConfidence && Number.isFinite(Number(data.intent_confidence))
+            ? toPercent(Number(data.intent_confidence))
+            : "Not applicable")
+
+    const pointerRaw = (data.intent_pointer || "").trim()
+    const intentPointerText = pointerRaw
+        ? pointerRaw
+        : (isBootstrap ? "Not applicable for bootstrap turn" : "Not provided")
+
     return {
         round: data.round,
         agent,
@@ -178,11 +201,11 @@ function buildTurnDetails(data) {
         ignored: data.ignored ? (data.ignored_reason || "Ignored by protocol") : "No",
         quotaLeft: typeof data.quota_left === "undefined" || data.quota_left === null ? "n/a" : data.quota_left,
         handQueue: Array.isArray(data.queued_interrupts) && data.queued_interrupts.length ? data.queued_interrupts.join(", ") : "(empty)",
-        score: Number.isFinite(score) ? toPercent(score) : "n/a",
-        relevance: Number.isFinite(breakdown.relevance) ? toPercent(breakdown.relevance) : "n/a",
-        novelty: Number.isFinite(breakdown.novelty) ? toPercent(breakdown.novelty) : "n/a",
-        confidence: Number.isFinite(breakdown.confidence) ? toPercent(breakdown.confidence) : "n/a",
-        fairness: Number.isFinite(breakdown.fairness) ? toPercent(breakdown.fairness) : "n/a",
+        intentHandRaise: intentHandRaiseText,
+        intentPriority: intentPriorityText,
+        intentPriorityRank: intentPriorityRankText,
+        intentConfidence: intentConfidenceText,
+        intentPointer: intentPointerText,
     }
 }
 
@@ -200,11 +223,11 @@ function openDetailsModal(details) {
         renderDetailRow("Ignored", details.ignored),
         renderDetailRow("Quota Left", details.quotaLeft),
         renderDetailRow("Hand Queue", details.handQueue),
-        renderDetailRow("Final Hand-Raise Score", details.score),
-        renderDetailRow("Relevance", details.relevance),
-        renderDetailRow("Novelty", details.novelty),
-        renderDetailRow("Confidence", details.confidence),
-        renderDetailRow("Fairness", details.fairness),
+        renderDetailRow("Intent Hand Raise", details.intentHandRaise),
+        renderDetailRow("Intent Priority", details.intentPriority),
+        renderDetailRow("Intent Priority Rank", details.intentPriorityRank),
+        renderDetailRow("Intent Confidence", details.intentConfidence),
+        renderDetailRow("Intent Pointer", details.intentPointer),
     ].join("")
     detailsBody.innerHTML = `<div class="detail-grid">${html}</div>`
     detailsModal.classList.remove("hidden")
@@ -237,10 +260,6 @@ document.addEventListener("keydown", (event) => {
 
 function toggleMemoryDrawer() {
     memoryDrawer.classList.toggle("open")
-}
-
-function toggleScoresDrawer() {
-    scoresDrawer.classList.toggle("open")
 }
 
 function toggleQueueDrawer() {
@@ -751,7 +770,6 @@ async function loop() {
     if (!running || paused || myEpoch !== loopEpoch) return
 
     renderMemory(data.memory, data.context_preview)
-    updateAgentScores(data.agent_scores, data.hand_raise_scores)
     updateHandQueue(data.queued_interrupts)
 
     if (data.status === "error") {
@@ -780,10 +798,19 @@ async function loop() {
         const candidate = data.finalization_candidate || {}
         if (candidate.text) {
             const candidateClass = (candidate.agent || "system").replace(" ", "").toLowerCase()
+            const candidateDetailsPayload = {
+                ...data,
+                agent: candidate.agent || "Agent",
+                agent_model: candidate.model || "n/a",
+                text: candidate.text,
+            }
             addMessage(
                 candidateClass,
                 `${formatAgentHeading(candidate.agent || "Agent", candidate.model)}\n\n${candidate.text}`,
-                { bubbleBackground: getAgentBubble(candidate.agent || "Agent") }
+                {
+                    bubbleBackground: getAgentBubble(candidate.agent || "Agent"),
+                    turnDetails: buildTurnDetails(candidateDetailsPayload),
+                }
             )
         }
         addSystem(
@@ -1033,36 +1060,10 @@ async function submitCommand() {
     updateCommandSendState()
 }
 
-// Score display functions
-function updateAgentScores(scores, breakdowns) {
-    agentScores = scores || {}
-    handRaiseScores = breakdowns || {}
-    renderScoresPanel()
-}
-
 function updateHandQueue(queue) {
     if (!Array.isArray(queue)) return
     handQueue = [...queue]
     renderQueuePanel()
-}
-
-function renderScoresPanel() {
-    const scoresList = document.getElementById("scores-list")
-    if (!scoresList) return
-
-    const html = Object.entries(agentScores)
-        .map(([agentName, score]) => {
-            const breakdown = handRaiseScores[agentName] || {}
-            const scorePercentage = Math.round(score * 100)
-            return `
-            <div class="score-item" title="Relevance: ${(breakdown.relevance || 0).toFixed(2)}, Novelty: ${(breakdown.novelty || 0).toFixed(2)}, Confidence: ${(breakdown.confidence || 0).toFixed(2)}, Fairness: ${(breakdown.fairness || 0).toFixed(2)}">
-                <span class="agent-name">${escapeHtml(agentName)}</span>
-                <span class="agent-score">${scorePercentage}%</span>
-            </div>
-        `})
-        .join("")
-    
-    scoresList.innerHTML = html || "<p>No scores yet</p>"
 }
 
 function renderQueuePanel() {

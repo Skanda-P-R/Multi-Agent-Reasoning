@@ -1,0 +1,850 @@
+{
+  "question": "Design a campus waste-sorting system",
+  "agents": [
+    {
+      "name": "Agent 1",
+      "model": "llama-3.1-8b-instant",
+      "section": "general"
+    },
+    {
+      "name": "Agent 2",
+      "model": "llama-3.3-70b-versatile",
+      "section": "general"
+    },
+    {
+      "name": "Agent 3",
+      "model": "openai/gpt-oss-120b",
+      "section": "general"
+    },
+    {
+      "name": "Agent 4",
+      "model": "openai/gpt-oss-20b",
+      "section": "general"
+    },
+    {
+      "name": "Agent 5",
+      "model": "groq/compound-mini",
+      "section": "general"
+    },
+    {
+      "name": "Agent 6",
+      "model": "openai/gpt-oss-safeguard-20b",
+      "section": "general"
+    }
+  ],
+  "cycles": 3,
+  "run_contribution": false,
+  "summary": {
+    "selected_counts": {
+      "Agent 1": 0,
+      "Agent 2": 0,
+      "Agent 3": 0,
+      "Agent 4": 0,
+      "Agent 5": 0,
+      "Agent 6": 0
+    }
+  },
+  "history": [
+    {
+      "cycle": 1,
+      "intents": [
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.1-8b-instant",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.9,
+              "chars": 183
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"high\",\n  \"pointer\": \"open_questions\",\n  \"value_add\": \"Clarify the consistency of agents in following strict JSON format.\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "open_questions",
+            "value_add": "Clarify the consistency of agents in following strict JSON format.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.91,
+              "chars": 195
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"medium\",\n  \"pointer\": \"campus waste-sorting system design\",\n  \"value_add\": \"proposing a multi-stage recycling and composting process\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage recycling and composting process",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.34,
+              "chars": 379
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Addressing the lack of behavior incentives to ensure consistent waste-sorting compliance\",\"value_add\":\"Propose a campus-wide incentive program linked to a mobile app that rewards students for correct sorting, includes real-time feedback, gamification, and measurable pilot metrics for rapid prototype validation\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Addressing the lack of behavior incentives to ensure consistent waste-sorting compliance",
+            "value_add": "Propose a campus-wide incentive program linked to a mobile app that rewards students for correct sorting, includes real-time feedback, gamification, and measurable pilot metrics for rapid prototype validation",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 4",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.94,
+              "chars": 250
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Define user interface for waste-sorting guidance\",\"value_add\":\"Outline a modular UI design with real-time feedback and gamification to improve student engagement and sorting accuracy\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface for waste-sorting guidance",
+            "value_add": "Outline a modular UI design with real-time feedback and gamification to improve student engagement and sorting accuracy",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 5",
+            "model": "groq/compound-mini",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.61,
+              "chars": 361
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Missing comprehensive stakeholder engagement and feedback loop in the waste-sorting design\",\"value_add\":\"Provide an end\u2011to\u2011end campus waste\u2011sorting system covering bin placement, material categorization, IoT monitoring, student/ staff education, incentive mechanisms, and pilot evaluation plan\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Missing comprehensive stakeholder engagement and feedback loop in the waste-sorting design",
+            "value_add": "Provide an end\u2011to\u2011end campus waste\u2011sorting system covering bin placement, material categorization, IoT monitoring, student/ staff education, incentive mechanisms, and pilot evaluation plan",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 6",
+            "model": "openai/gpt-oss-safeguard-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.04,
+              "chars": 183
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Design a campus waste-sorting system with sensor-based AI classification and user engagement incentives\",\"value_add\":\"Propose a modular",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Design a campus waste-sorting system with sensor-based AI classification and user engagement incentives",
+            "value_add": "Propose a modular",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "raised_queue": [
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Addressing the lack of behavior incentives to ensure consistent waste-sorting compliance",
+            "value_add": "Propose a campus-wide incentive program linked to a mobile app that rewards students for correct sorting, includes real-time feedback, gamification, and measurable pilot metrics for rapid prototype validation",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 4",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface for waste-sorting guidance",
+            "value_add": "Outline a modular UI design with real-time feedback and gamification to improve student engagement and sorting accuracy",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 5",
+            "model": "groq/compound-mini",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Missing comprehensive stakeholder engagement and feedback loop in the waste-sorting design",
+            "value_add": "Provide an end\u2011to\u2011end campus waste\u2011sorting system covering bin placement, material categorization, IoT monitoring, student/ staff education, incentive mechanisms, and pilot evaluation plan",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.1-8b-instant",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "open_questions",
+            "value_add": "Clarify the consistency of agents in following strict JSON format.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 6",
+            "model": "openai/gpt-oss-safeguard-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Design a campus waste-sorting system with sensor-based AI classification and user engagement incentives",
+            "value_add": "Propose a modular",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage recycling and composting process",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "selected": null,
+      "contribution": null
+    },
+    {
+      "cycle": 2,
+      "intents": [
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.1-8b-instant",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.97,
+              "chars": 183
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"high\",\n  \"pointer\": \"open_questions\",\n  \"value_add\": \"Clarify the consistency of agents in following strict JSON format.\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "open_questions",
+            "value_add": "Clarify the consistency of agents in following strict JSON format.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.04,
+              "chars": 195
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"medium\",\n  \"pointer\": \"campus waste-sorting system design\",\n  \"value_add\": \"proposing a multi-stage recycling and composting process\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage recycling and composting process",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "error",
+              "elapsed_sec": 0.65,
+              "error": "429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions"
+            },
+            {
+              "attempt": 2,
+              "status": "error",
+              "elapsed_sec": 0.68,
+              "error": "429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions"
+            },
+            {
+              "attempt": 3,
+              "status": "error",
+              "elapsed_sec": 0.62,
+              "error": "429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions"
+            }
+          ],
+          "raw": "",
+          "extracted": {
+            "hand_raise": false,
+            "priority_rank": 3,
+            "priority_label": "medium",
+            "pointer": "(missing pointer)",
+            "value_add": "(not provided)",
+            "parse_source": "fallback_text",
+            "confidence": 0.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 4",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.03,
+              "chars": 291
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Define user interface for sorting guidance\",\"value_add\":\"Propose a mobile app that uses QR scanning and AI-based waste classification to guide students on how to sort waste, including real-time feedback and gamified rewards.\",\"confidence\":0.8}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface for sorting guidance",
+            "value_add": "Propose a mobile app that uses QR scanning and AI-based waste classification to guide students on how to sort waste, including real-time feedback and gamified rewards.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 5",
+            "model": "groq/compound-mini",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 2.63,
+              "chars": 309
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"high\",\n  \"pointer\": \"absence of a detailed campus waste-sorting system architecture\",\n  \"value_add\": \"provide a complete design including waste stream categories, collection points, sorting stations, education program, and technology integration\",\n  \"confidence\": 0.86\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a detailed campus waste-sorting system architecture",
+            "value_add": "provide a complete design including waste stream categories, collection points, sorting stations, education program, and technology integration",
+            "confidence": 0.86,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 6",
+            "model": "openai/gpt-oss-safeguard-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.06,
+              "chars": 265
+            }
+          ],
+          "raw": "{\"hand_raise\": true,\"priority\": \"high\",\"pointer\": \"Designing a modular, sensor-driven waste-sorting system that integrates student engagement and real-time data analytics\",\"value_add\": \"Propose a prototype architecture featuring: 1) RFID-tagged bins with weight and",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Designing a modular, sensor-driven waste-sorting system that integrates student engagement and real-time data analytics",
+            "value_add": "Propose a prototype architecture featuring: 1) RFID-tagged bins with weight and",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.941
+          }
+        }
+      ],
+      "raised_queue": [
+        {
+          "agent": {
+            "name": "Agent 5",
+            "model": "groq/compound-mini",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a detailed campus waste-sorting system architecture",
+            "value_add": "provide a complete design including waste stream categories, collection points, sorting stations, education program, and technology integration",
+            "confidence": 0.86,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.1-8b-instant",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "open_questions",
+            "value_add": "Clarify the consistency of agents in following strict JSON format.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 4",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface for sorting guidance",
+            "value_add": "Propose a mobile app that uses QR scanning and AI-based waste classification to guide students on how to sort waste, including real-time feedback and gamified rewards.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 6",
+            "model": "openai/gpt-oss-safeguard-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Designing a modular, sensor-driven waste-sorting system that integrates student engagement and real-time data analytics",
+            "value_add": "Propose a prototype architecture featuring: 1) RFID-tagged bins with weight and",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 0.941
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage recycling and composting process",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "selected": null,
+      "contribution": null
+    },
+    {
+      "cycle": 3,
+      "intents": [
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.1-8b-instant",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.82,
+              "chars": 183
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"high\",\n  \"pointer\": \"open_questions\",\n  \"value_add\": \"Clarify the importance of strict JSON consistency in the protocol.\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "open_questions",
+            "value_add": "Clarify the importance of strict JSON consistency in the protocol.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.91,
+              "chars": 219
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"medium\",\n  \"pointer\": \"campus waste-sorting system design\",\n  \"value_add\": \"proposing a multi-stage sorting process with recycling and composting facilities\",\n  \"confidence\": 0.8\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage sorting process with recycling and composting facilities",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.41,
+              "chars": 408
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Missing behavioral incentive and compliance monitoring in the waste-sorting design\",\"value_add\":\"Propose a modular system that combines strategically placed sorting stations, digital signage with real-time fill-level data, a campus app for gamified recycling rewards, and a feedback loop to adjust station placement based on usage analytics\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Missing behavioral incentive and compliance monitoring in the waste-sorting design",
+            "value_add": "Propose a modular system that combines strategically placed sorting stations, digital signage with real-time fill-level data, a campus app for gamified recycling rewards, and a feedback loop to adjust station placement based on usage analytics",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 4",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 0.88,
+              "chars": 310
+            }
+          ],
+          "raw": "{\"hand_raise\":true,\"priority\":\"high\",\"pointer\":\"Define user interface for waste-sorting guidance\",\"value_add\":\"Propose a modular sensor-based sorting system with AI classification and real-time feedback to students via a mobile app, integrating QR-code labeling and automated bin selection.\",\"confidence\":0.85}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface for waste-sorting guidance",
+            "value_add": "Propose a modular sensor-based sorting system with AI classification and real-time feedback to students via a mobile app, integrating QR-code labeling and automated bin selection.",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 5",
+            "model": "groq/compound-mini",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "error",
+              "elapsed_sec": 3.97,
+              "error": "429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions"
+            },
+            {
+              "attempt": 2,
+              "status": "ok",
+              "elapsed_sec": 1.71,
+              "chars": 342
+            }
+          ],
+          "raw": "{\n  \"hand_raise\": true,\n  \"priority\": \"high\",\n  \"pointer\": \"absence of a detailed waste-stream analysis and station placement plan\",\n  \"value_add\": \"offer a comprehensive campus waste-sorting system design covering material categories, optimal station locations, signage, education initiatives, and monitoring metrics\",\n  \"confidence\": 0.92\n}",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a detailed waste-stream analysis and station placement plan",
+            "value_add": "offer a comprehensive campus waste-sorting system design covering material categories, optimal station locations, signage, education initiatives, and monitoring metrics",
+            "confidence": 0.92,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 6",
+            "model": "openai/gpt-oss-safeguard-20b",
+            "section": "general"
+          },
+          "attempts": [
+            {
+              "attempt": 1,
+              "status": "ok",
+              "elapsed_sec": 1.18,
+              "chars": 353
+            }
+          ],
+          "raw": "{\"hand_raise\": true,\"priority\": \"high\",\"pointer\": \"Design incentive mechanisms for student participation in waste-sorting\",\"value_add\": \"Propose a gamified mobile app that tracks individual and class waste-sorting metrics, awards points redeemable for campus perks, and displays real-time leaderboard to encourage engagement and compliance.\",\"confidence",
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Design incentive mechanisms for student participation in waste-sorting",
+            "value_add": "Propose a gamified mobile app that tracks individual and class waste-sorting metrics, awards points redeemable for campus perks, and displays real-time leaderboard to encourage engagement and compliance.",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "raised_queue": [
+        {
+          "agent": {
+            "name": "Agent 5",
+            "model": "groq/compound-mini",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "absence of a detailed waste-stream analysis and station placement plan",
+            "value_add": "offer a comprehensive campus waste-sorting system design covering material categories, optimal station locations, signage, education initiatives, and monitoring metrics",
+            "confidence": 0.92,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 3",
+            "model": "openai/gpt-oss-120b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Missing behavioral incentive and compliance monitoring in the waste-sorting design",
+            "value_add": "Propose a modular system that combines strategically placed sorting stations, digital signage with real-time fill-level data, a campus app for gamified recycling rewards, and a feedback loop to adjust station placement based on usage analytics",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 4",
+            "model": "openai/gpt-oss-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Define user interface for waste-sorting guidance",
+            "value_add": "Propose a modular sensor-based sorting system with AI classification and real-time feedback to students via a mobile app, integrating QR-code labeling and automated bin selection.",
+            "confidence": 0.85,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 1",
+            "model": "llama-3.1-8b-instant",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "open_questions",
+            "value_add": "Clarify the importance of strict JSON consistency in the protocol.",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 6",
+            "model": "openai/gpt-oss-safeguard-20b",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 1,
+            "priority_label": "high",
+            "pointer": "Design incentive mechanisms for student participation in waste-sorting",
+            "value_add": "Propose a gamified mobile app that tracks individual and class waste-sorting metrics, awards points redeemable for campus perks, and displays real-time leaderboard to encourage engagement and compliance.",
+            "confidence": 0.0,
+            "parse_source": "salvaged_jsonish",
+            "novelty": 1.0
+          }
+        },
+        {
+          "agent": {
+            "name": "Agent 2",
+            "model": "llama-3.3-70b-versatile",
+            "section": "general"
+          },
+          "extracted": {
+            "hand_raise": true,
+            "priority_rank": 2,
+            "priority_label": "medium",
+            "pointer": "campus waste-sorting system design",
+            "value_add": "proposing a multi-stage sorting process with recycling and composting facilities",
+            "confidence": 0.8,
+            "parse_source": "json",
+            "novelty": 1.0
+          }
+        }
+      ],
+      "selected": null,
+      "contribution": null
+    }
+  ]
+}
