@@ -1,95 +1,100 @@
-# Multi-Agent Reasoning Web App (Flask + Groq)
+# Multi-Agent Reasoning (Phase-0)
 
-This project is an interactive multi-agent reasoning system built with Flask and Groq LLMs.
-It simulates two AI agents independently answering a question, a judge evaluating their responses, and an iterative reasoning loop until consensus is reached — all visualized in a modern, real-time web UI.
+Phase-0 is the first implementation of this project: a Flask web app where:
 
-The UI features:
+- Agent A answers a question
+- Agent B answers the same question
+- A Judge model evaluates both answers
+- Both agents then vote `AGREE` or `DISAGREE` with the judge verdict
+- The system runs multiple rounds until both agents agree
 
-* Parallel agent responses (sentence-by-sentence typing)
-* Judge evaluation with staged delays
-* Visual agreement/disagreement indicators
-* Multi-round navigation with history
-* Markdown rendering
-* Polished, modern dashboard-style layout
+The UI shows each round in real time with typing animation, agreement indicators, and round navigation.
 
+## Features in Phase-0
 
-## Installation & Setup
-### 1. Clone the repository
-  ```
-  git clone https://github.com/your-username/multi-agent-reasoning.git
-  cd multi-agent-reasoning
-  ```
+- Two-agent parallel reasoning (`Agent A`, `Agent B`)
+- Judge-based arbitration after each round
+- Iterative loop with carry-forward context from judge verdict
+- Automatic stop when both agents agree (`finished = true`)
+- Round history with previous/next navigation
+- Markdown rendering of responses
+- Visual agreement states (green/red)
 
-### 2. Create a virtual environment (recommended)
+## Tech Stack
 
-  `python -m venv venv`
-  
-  Activate it:
-  
-  Windows
-  
-  `venv\Scripts\activate`
-  
-  
-  macOS / Linux
-  
-  `source venv/bin/activate`
+- Python + Flask
+- Groq Chat Completions API
+- Vanilla JavaScript frontend
 
-### 3. Install dependencies
+## Project Structure
 
-`pip install -r requirements.txt`
-
-
-Contents of requirements.txt:
 ```
-flask
-requests
+app.py
+templates/
+  index.html
+static/
+  app.js
+  style.css
 ```
 
-### Getting a Groq API Key
+## Setup
 
-This project uses the Groq API to run the AI agents and judge.
+1. Clone and enter the project:
 
-Step-by-step:
+```bash
+git clone <your-repo-url>
+cd Multi-Agent-Reasoning
+```
 
-1. Go to  `https://console.groq.com/keys`
-2. Sign up or log in with your account
-3. Click Create API Key
-4. Copy the generated key
-`(It will look like: gsk_...)`
-5. Configure the API Key
-   * Open app.py and find this line:
-     `API_KEY = "PUT_YOUR_API_KEY_HERE"`
-   * Replace it with your actual Groq API key:
-     `API_KEY = "gsk_your_actual_key_here"`
+2. Create and activate virtual environment:
 
-⚠️ Important:
-Do NOT commit your real API key to a public repository.
-If publishing publicly, use environment variables instead.
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
 
-### Running the App
+3. Install dependencies:
 
-Start the Flask server:
+```bash
+pip install flask requests
+```
 
-`python app.py`
+## Configure API Key
 
+Phase-0 currently keeps the key directly in `app.py`.
 
-You should see output like:
+Open [app.py](/d:/8th Sem Major Project/Multi-Agent-Reasoning/app.py) and set:
 
-`Running on http://127.0.0.1:5000`
+```python
+API_KEY = "YOUR_GROQ_API_KEY"
+```
 
+Do not commit a real key.
 
-Open your browser and go to:
+## Run
+
+```bash
+python app.py
+```
+
+Then open:
 
 `http://127.0.0.1:5000`
 
+## API Flow (Phase-0)
 
-## Models Used
+- `GET /` -> serves UI
+- `POST /run` -> runs one full round:
+  - Agent A response
+  - Agent B response
+  - Judge verdict
+  - Agent agreement checks
+  - Returns `finished` and `new_context`
 
-Agent A: llama-3.1-8b-instant
+Frontend repeats `/run` automatically until `finished` is true.
 
-Agent B: openai/gpt-oss-20b
+## Default Models in Phase-0
 
-Judge: openai/gpt-oss-120b
-
-(You can easily swap these in app.py.)
+- Agent A: `llama-3.1-8b-instant`
+- Agent B: `openai/gpt-oss-20b`
+- Judge: `openai/gpt-oss-120b`
