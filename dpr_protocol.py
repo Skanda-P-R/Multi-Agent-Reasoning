@@ -860,12 +860,14 @@ Return ONLY JSON and make pointer strictly section-aligned:
         for key in ["decisions", "actions", "open_questions"]:
             for item in self.shared_memory.get(key, [])[:4]:
                 covered_keywords.update(re.findall(r"[a-z0-9]+", item.lower()))
+        low_quota_threshold = max(1, STARTING_QUOTA // 3)
 
         intents = []
         raw_candidates = []
         for agent in self.agents:
             name = agent["name"]
-            if self.quotas.get(name, 0) <= 0:
+            remaining_quota = self.quotas.get(name, 0)
+            if remaining_quota <= 0:
                 continue
             section = agent.get("section", DEFAULT_SECTION)
             section_header = SECTION_HEADERS.get(agent.get("section", DEFAULT_SECTION), SECTION_HEADERS[DEFAULT_SECTION])
@@ -891,6 +893,10 @@ Redirect:
 Recently selected pointer themes (avoid repeating unless unresolved with concrete new delta):
 {recent_pointer_block}
 
+Your remaining turns quota:
+- Remaining quota: {remaining_quota}
+- Initial quota per agent: {STARTING_QUOTA}
+
 Decide if you should raise hand NOW and return ONLY JSON:
 {{
   "hand_raise": true/false,
@@ -904,6 +910,8 @@ Decide if you should raise hand NOW and return ONLY JSON:
 Rules:
 - Avoid vague pointers like generic risk mitigation.
 - Do not repeat recent pointer themes unless you add a concrete unresolved constraint.
+- If your remaining quota is low (<= {low_quota_threshold}), raise hand ONLY for high-value contributions:
+  strong confidence, concrete pointer, and clear unresolved impact.
 """
             raw = ""
             for _ in range(2):
@@ -956,6 +964,16 @@ Rules:
                 intent["priority_rank"] = max(2, intent["priority_rank"])
                 intent["priority_label"] = "medium"
 
+            # Near quota exhaustion: only allow strong hand-raise candidates.
+            if remaining_quota <= low_quota_threshold:
+                low_quota_reject = (
+                    intent["confidence"] < 0.75
+                    or self._is_vague_pointer(intent["pointer"])
+                    or (section != "general" and fit < 0.25)
+                )
+                if low_quota_reject:
+                    continue
+
             intents.append({"agent": name, "section": section, **intent})
 
         # dedupe near-duplicate pointers: keep highest confidence among similar themes
@@ -972,6 +990,15 @@ Rules:
                 if cand["agent"] in {x["agent"] for x in deduped}:
                     continue
                 if any(self._pointer_similarity(cand["pointer"], existing["pointer"]) >= 0.82 for existing in deduped):
+                    continue
+                cand_section = cand.get("section", DEFAULT_SECTION)
+                cand_fit = self._section_fit_score(cand_section, cand.get("pointer", ""))
+                cand_quota = self.quotas.get(cand["agent"], 0)
+                if cand_quota <= low_quota_threshold and (
+                    cand.get("confidence", 0.0) < 0.82
+                    or self._is_vague_pointer(cand.get("pointer", ""))
+                    or (cand_section != "general" and cand_fit < 0.25)
+                ):
                     continue
                 cand = dict(cand)
                 cand["hand_raise"] = True
