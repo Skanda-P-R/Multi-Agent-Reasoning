@@ -256,6 +256,8 @@ Current JSON artifacts include:
 
 These files capture model intent outputs, parsing behavior, and contribution/no-contribution scenarios used to inspect broadcast decision quality.
 
+For execution flow, artifact format, and usage notes, see [broadcast_tests README](Multi-Agent-Reasoning/broadcast_tests/README.md).
+
 ---
 
 ## Branch Feature Snapshot
