@@ -1,75 +1,89 @@
-# Distributed Protocol for Reasoning (DPR)
+# Distributed Protocol for Reasoning (DPR) - Phase 2
 
-This project is a web-based implementation of a **Distributed Protocol for Reasoning (DPR)** with multi-agent turn-taking and human governance controls.
+This branch contains the **Phase-2 implementation** of DPR: a multi-agent reasoning system with:
 
-It runs a shared reasoning session across 4 agents and provides a live console for:
-
-- start / pause / resume
-- human inject instructions
-- human redirect objective (for N turns)
-- visible protocol metadata (ignored responses, quota, hand-queue)
+- dynamic model panel selection
+- section-aware agents (general / programming / education / research)
+- score-based hand-raise queue
+- shared structured memory
+- human-in-the-loop turns and finalization control
 
 ---
 
-## Current Architecture
+## What Phase-2 Adds
+
+Compared to earlier phases, this version includes:
+
+- Model catalog + defaults exposed via API
+- Question-based model suggestion endpoint
+- Per-agent quota economy (`STARTING_QUOTA = 15`)
+- Score-based hand-raise selection (relevance, novelty, confidence, fairness)
+- Shared memory state (`facts`, `options`, `decisions`, `open_questions`, `actions`, `changelog`)
+- Human hand raise + explicit human turn submission
+- Finalization gate:
+  - completion candidate can be raised
+  - human can approve or continue with redirect
+- Rich protocol metadata returned each step (`selection_reason`, `hand_raise_scores`, queued interrupts, memory)
+
+---
+
+## Architecture
 
 ### Backend
 
-- `app.py` — Flask API + session lifecycle
-- `dpr_protocol.py` — DPR protocol engine (`DPRSession`)
+- `app.py` - Flask API and session routes
+- `dpr_protocol.py` - Phase-2 DPR engine (`DPRSession`)
+- `dpr_selector.py` - LLM + heuristic panel/model suggestion
+- `dpr_model_client.py` - Groq API caller
+- `dpr_constants.py` - models, thresholds, protocol constants
 
 ### Frontend
 
-- `templates/index.html` — console layout
-- `static/app.js` — UI actions + polling loop
-- `static/style.css` — styling
-
-### Config / Safety
-
-- `.env.example` — Sample API key config
-- `.gitignore` — excludes `.env` and Python cache files
+- `templates/index.html` - console UI
+- `static/app.js` - interaction loop and controls
+- `static/style.css` - styling
 
 ---
 
-## Protocol Features Implemented
+## Core Protocol Behavior (Phase-2)
 
-### Phase 1 Core
-
-- Talking-stick style sequencing (round-robin base)
-- Basic fairness / sequencing controls
-- Human console commands: **PAUSE**, **RESUME**, **INJECT**
-- Logged ignored responses (with reason)
-
-### Phase 2 Governance
-
-- Hand-raise interrupt queue
-- Quota-based contribution economy (`STARTING_QUOTA`)
-- Priority ordering using proximity-to-token for queued interrupts
-- Anti-starvation prioritization using `last_spoke` threshold
-
-### Facilitator Rules
-
-- Loop detection (normalized recent-response repeat check)
-- Fairness repeat-streak protection
-- Redirection support via human **REDIRECT** command
-- Facilitator event logging (`facilitator_log`)
+- Agents are initialized from selected models (`/start` payload can pass model+section choices)
+- Each step selects next speaker using queue + scoring logic
+- Responses are accepted/ignored with facilitator checks (loop/fairness)
+- Shared memory is updated continuously and fed back into context
+- Human can intervene using:
+  - `inject`
+  - `redirect`
+  - `raise_hand`
+  - `human_turn` (direct reasoning turn or action)
+- If a completion candidate is raised, session enters `awaiting_human_finalization`
 
 ---
 
 ## API Endpoints
 
-- `POST /start` → start session with `{ "question": "..." }`
-- `POST /step` → run one protocol step
-- `POST /pause` → pause session
-- `POST /resume` → resume session
-- `POST /inject` → inject instruction `{ "message": "..." }`
-- `POST /redirect` → redirect objective `{ "message": "...", "turns": 3 }`
+- `GET /` - UI
+- `POST /start` - start session:
+  - body: `{ "question": "...", "models": [...] }`
+- `GET /models` - available models, defaults, sections
+- `POST /suggest_models` - suggestion for model panel based on question
+- `POST /step` - run one protocol step
+- `POST /pause` - pause session
+- `POST /resume` - resume session
+- `POST /set_models` - update active model panel (session must be paused)
+- `POST /stop` - stop session
+- `POST /inject` - add human instruction
+- `POST /raise_hand` - enqueue human turn request
+- `POST /human_turn` - submit human turn / human action
+- `POST /redirect` - set facilitator redirect objective for N turns
+- `POST /finalize/approve` - approve completion candidate
+- `POST /finalize/continue` - reject completion and continue (optional redirect)
 
 ---
 
 ## Setup
 
-### 1) Create & activate virtual environment (recommended)
+### 1) Create and activate virtual environment
 
 ```bash
 python -m venv venv
@@ -93,20 +107,16 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3) Configure Groq API key with `.env`
-
-In `Multi-Agent-Reasoning/`:
+### 3) Configure API key
 
 1. Copy `.env.example` to `.env`
-2. Edit `.env` and set:
+2. Set:
 
 ```env
 GROQ_API_KEY=gsk_your_actual_key_here
 ```
 
 ### 4) Run
-
-From `Multi-Agent-Reasoning/`:
 
 ```bash
 python app.py
@@ -116,20 +126,23 @@ Open: `http://127.0.0.1:5000`
 
 ---
 
-## Models (default)
+## Default Models
 
-Configured in `dpr_protocol.py`:
+From `dpr_constants.py`:
 
-- Agent 1: `llama-3.3-70b-versatile`
-- Agent 2: `openai/gpt-oss-120b`
-- Agent 3: `moonshotai/kimi-k2-instruct`
-- Agent 4: `openai/gpt-oss-20b`
-
-You can modify the `AGENTS` list to change models.
+- Defaults:
+  - `llama-3.3-70b-versatile`
+  - `openai/gpt-oss-120b`
+  - `openai/gpt-oss-20b`
+- Available catalog also includes:
+  - `llama-3.1-8b-instant`
+  - `groq/compound-mini`
+  - `openai/gpt-oss-safeguard-20b`
+  - `qwen/qwen3-32b`
 
 ---
 
 ## Notes
 
-- This uses Flask dev server (`debug=True`) and is not production-ready.
-- Keep `.env` private and never commit real API keys.
+- Runs on Flask dev server (`debug=True`)
+- Keep `.env` private and never commit real API keys
