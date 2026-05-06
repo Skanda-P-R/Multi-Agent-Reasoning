@@ -15,19 +15,19 @@ It runs a shared reasoning session across 4 agents and provides a live console f
 
 ### Backend
 
-- `app.py` — Flask API + session lifecycle
-- `dpr_protocol.py` — DPR protocol engine (`DPRSession`)
+- `app.py` - Flask API + session lifecycle
+- `dpr_protocol.py` - DPR protocol engine (`DPRSession`)
 
 ### Frontend
 
-- `templates/index.html` — console layout
-- `static/app.js` — UI actions + polling loop
-- `static/style.css` — styling
+- `templates/index.html` - console layout
+- `static/app.js` - UI actions + polling loop
+- `static/style.css` - styling
 
 ### Config / Safety
 
-- `.env.example` — Sample API key config
-- `.gitignore` — excludes `.env` and Python cache files
+- `.env.example` - Sample API key config
+- `.gitignore` - excludes `.env` and Python cache files
 
 ---
 
@@ -58,12 +58,12 @@ It runs a shared reasoning session across 4 agents and provides a live console f
 
 ## API Endpoints
 
-- `POST /start` → start session with `{ "question": "..." }`
-- `POST /step` → run one protocol step
-- `POST /pause` → pause session
-- `POST /resume` → resume session
-- `POST /inject` → inject instruction `{ "message": "..." }`
-- `POST /redirect` → redirect objective `{ "message": "...", "turns": 3 }`
+- `POST /start` -> start session with `{ "question": "..." }`
+- `POST /step` -> run one protocol step
+- `POST /pause` -> pause session
+- `POST /resume` -> resume session
+- `POST /inject` -> inject instruction `{ "message": "..." }`
+- `POST /redirect` -> redirect objective `{ "message": "...", "turns": 3 }`
 
 ---
 
