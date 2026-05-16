@@ -1,4 +1,9 @@
 from flask import Flask, render_template, request, jsonify
+from dpr_history import (
+    list_history_summaries,
+    load_history_document,
+    save_history_document,
+)
 from dpr_protocol import (
     DPRSession,
     AVAILABLE_MODELS,
@@ -95,6 +100,7 @@ def step():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
+    session.record_event("step_result", result)
     return jsonify(result)
 
 
@@ -105,6 +111,7 @@ def pause():
         return missing
 
     session.pause()
+    session.record_event("pause", {"status": "paused"})
     return jsonify({"status": "paused"})
 
 
@@ -115,6 +122,7 @@ def resume():
         return missing
 
     session.resume()
+    session.record_event("resume", {"status": "resumed"})
     return jsonify({"status": "resumed"})
 
 
@@ -140,12 +148,14 @@ def stop():
         return missing
 
     session.stop()
-    return jsonify({
+    result = {
         "status": "done",
         "agent": "Human",
         "text": "Reasoning stopped by human.",
         **session._state_payload()
-    })
+    }
+    session.record_event("stop", result)
+    return jsonify(result)
 
 
 # --------------------------------------------
@@ -162,6 +172,7 @@ def inject():
         return jsonify({"status": "error", "error": "message is required"}), 400
 
     result = session.inject(msg)
+    session.record_event("inject", {"message": msg, "result": result})
 
     return jsonify({"status": "ok", "log": result})
 
@@ -173,6 +184,7 @@ def raise_hand():
         return missing
 
     result = session.raise_human_hand()
+    session.record_event("raise_hand", result)
     return jsonify({"status": "ok", "log": result})
 
 
@@ -197,6 +209,7 @@ def human_turn():
     except RuntimeError as e:
         return jsonify({"status": "error", "error": str(e)}), 400
 
+    session.record_event("human_turn", {"action": action or "turn", "message": msg, "turns": turns, "result": result})
     return jsonify(result)
 
 
@@ -213,6 +226,7 @@ def redirect():
         return jsonify({"status": "error", "error": "message is required"}), 400
 
     result = session.redirect(msg, turns)
+    session.record_event("redirect", {"message": msg, "turns": turns, "result": result})
     return jsonify({"status": "ok", "log": result})
 
 
@@ -230,6 +244,7 @@ def finalize_approve():
     except RuntimeError as e:
         return jsonify({"status": "error", "error": str(e)}), 400
 
+    session.record_event("finalize_approve", result)
     return jsonify(result)
 
 
@@ -250,6 +265,85 @@ def finalize_continue():
     except RuntimeError as e:
         return jsonify({"status": "error", "error": str(e)}), 400
 
+    session.record_event("finalize_continue", {"redirect_message": redirect_message, "turns": turns, "result": result})
+    return jsonify(result)
+
+
+# --------------------------------------------
+# HISTORY ROUTES
+# --------------------------------------------
+@app.route("/history", methods=["GET"])
+def history_list():
+    return jsonify({
+        "status": "ok",
+        "items": list_history_summaries(),
+    })
+
+
+@app.route("/history/save_current", methods=["POST"])
+def history_save_current():
+    global session
+
+    missing = _require_session()
+    if missing:
+        return missing
+
+    if not session.ended:
+        return jsonify({"status": "error", "error": "session has not ended"}), 400
+
+    document = save_history_document(session.to_history_document())
+    saved_id = document["id"]
+    session = None
+    return jsonify({
+        "status": "ok",
+        "id": saved_id,
+        "saved_at": document.get("saved_at"),
+    })
+
+
+@app.route("/history/<history_id>", methods=["GET"])
+def history_get(history_id):
+    try:
+        document = load_history_document(history_id)
+    except (FileNotFoundError, ValueError) as e:
+        return jsonify({"status": "error", "error": str(e)}), 404
+
+    return jsonify({"status": "ok", "history": document})
+
+
+@app.route("/history/<history_id>/load", methods=["POST"])
+def history_load(history_id):
+    global session
+
+    try:
+        document = load_history_document(history_id)
+        session = DPRSession.from_history_document(document, history_id=history_id)
+    except (FileNotFoundError, ValueError) as e:
+        return jsonify({"status": "error", "error": str(e)}), 404
+
+    return jsonify({
+        "status": "ok",
+        "history_id": history_id,
+        "session": session.restore_payload(),
+    })
+
+
+@app.route("/history/continue", methods=["POST"])
+def history_continue():
+    missing = _require_session()
+    if missing:
+        return missing
+
+    payload = request.json or {}
+    msg = (payload.get("message") or "").strip()
+    turns = payload.get("turns", 3)
+
+    try:
+        result = session.continue_from_history_redirect(msg, turns)
+    except RuntimeError as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+    session.record_event("history_continue", {"message": msg, "turns": turns, "result": result})
     return jsonify(result)
 
 

@@ -57,7 +57,8 @@ body {
     border-bottom: 1px solid var(--line);
 }
 
-.sidebar-nav .sidebar-nav-btn {
+.sidebar-nav .sidebar-nav-btn,
+.sidebar-bottom .sidebar-nav-btn {
     width: 100%;
     min-height: 44px;
     font-weight: 700;
@@ -75,18 +76,21 @@ body {
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.sidebar-nav .sidebar-nav-btn:hover {
+.sidebar-nav .sidebar-nav-btn:hover,
+.sidebar-bottom .sidebar-nav-btn:hover {
     background: #ececef;
 }
 
-.sidebar-nav .sidebar-nav-btn.active {
+.sidebar-nav .sidebar-nav-btn.active,
+.sidebar-bottom .sidebar-nav-btn.active {
     background: #e6e6e9;
     border-color: #d8d8dd;
     color: #22232a;
     position: relative;
 }
 
-.sidebar-nav .sidebar-nav-btn.active::before {
+.sidebar-nav .sidebar-nav-btn.active::before,
+.sidebar-bottom .sidebar-nav-btn.active::before {
     content: "";
     position: absolute;
     left: 0;
@@ -110,6 +114,16 @@ body {
 }
 
 .left-sidebar.expanded .sidebar-nav .sidebar-nav-btn {
+    justify-content: flex-start;
+    border-radius: 8px;
+}
+
+.sidebar-bottom {
+    padding: 8px;
+    border-top: 1px solid var(--line);
+}
+
+.left-sidebar.expanded .sidebar-bottom .sidebar-nav-btn {
     justify-content: flex-start;
     border-radius: 8px;
 }
@@ -217,6 +231,12 @@ body {
     width: 100%;
     display: block;
     text-align: center;
+}
+
+.sidebar-apply-btn:disabled {
+    opacity: 0.46;
+    cursor: not-allowed;
+    filter: none;
 }
 
 .app {
@@ -606,6 +626,45 @@ button:hover {
     color: #6d6d76;
     font-size: 16px;
     line-height: 1;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.history-item {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+
+.history-item:hover {
+    background: #f6f6f7;
+}
+
+.history-title {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-time {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
 }
 
 .score-item {

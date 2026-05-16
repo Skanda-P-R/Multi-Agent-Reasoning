@@ -17,9 +17,14 @@ let agentModelMap = {}
 let agentColorMap = {}
 let loopEpoch = 0
 let handQueue = []
+let sessionPausedForModelChanges = false
+let sessionHasSaveCandidate = false
+let historyContinuationPending = false
+let loadedHistoryId = null
 
 const chat = document.getElementById("chat")
 const startBtn = document.getElementById("start-btn")
+const modelApplyBtn = document.getElementById("model-apply-btn")
 const commandInput = document.getElementById("command-input")
 const commandSendBtn = document.getElementById("command-send-btn")
 const redirectTurnsInput = document.getElementById("redirect-turns")
@@ -31,6 +36,8 @@ const memoryDrawer = document.getElementById("memory-drawer")
 const queueDrawer = document.getElementById("queue-drawer")
 const memoryView = document.getElementById("memory-view")
 const contextView = document.getElementById("context-view")
+const historyList = document.getElementById("history-list")
+const historyMeta = document.getElementById("history-meta")
 const questionInput = document.getElementById("question")
 const suggestionBox = document.getElementById("suggestion-box")
 const suggestionText = document.getElementById("suggestion-text")
@@ -84,6 +91,14 @@ function escapeHtml(str) {
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
+}
+
+function escapeJsString(str) {
+    return String(str || "")
+        .replaceAll("\\", "\\\\")
+        .replaceAll("'", "\\'")
+        .replaceAll("\n", "\\n")
+        .replaceAll("\r", "\\r")
 }
 
 function truncateForDrawer(text, limit = 260) {
@@ -190,7 +205,9 @@ function setNewChatAvailability(isEnabled) {
     newChatBtn.disabled = !isEnabled
     if (isEnabled) {
         newChatBtn.textContent = "New Chat"
-        newChatBtn.title = "Start a new chat"
+        newChatBtn.title = sessionHasSaveCandidate
+            ? "Save this session to history and start a new chat"
+            : "Start a new chat"
     } else {
         newChatBtn.textContent = "Session running"
         newChatBtn.title = "Wait for session completion"
@@ -308,8 +325,20 @@ function toggleSidebar() {
     leftSidebar.classList.toggle("expanded")
 }
 
-function startNewChat() {
-    if (running || paused) return
+async function startNewChat() {
+    if (running || paused || historyContinuationPending) return
+    if (sessionHasSaveCandidate) {
+        showLoading("Saving chat history...")
+        const res = await fetch("/history/save_current", { method: "POST" })
+        const data = await res.json()
+        hideLoading()
+        if (data.status === "error") {
+            setSessionStatus(`Could not save chat: ${data.error || "unknown error"}`, "error", 7000)
+            return
+        }
+        sessionHasSaveCandidate = false
+        await loadHistoryList(false)
+    }
     window.location.reload()
 }
 
@@ -325,9 +354,19 @@ function openSidebarSection(section, shouldExpand = true) {
 
     const navButtons = document.querySelectorAll(".sidebar-nav-btn")
     navButtons.forEach((btn) => btn.classList.remove("active"))
-    const activeBtnId = section === "models" ? "nav-models" : section === "context" ? "nav-context" : "nav-queue"
+    const activeBtnId = section === "models"
+        ? "nav-models"
+        : section === "context"
+            ? "nav-context"
+            : section === "history"
+                ? "nav-history"
+                : "nav-queue"
     const activeBtn = document.getElementById(activeBtnId)
     if (activeBtn) activeBtn.classList.add("active")
+
+    if (section === "history") {
+        loadHistoryList()
+    }
 }
 
 function toggleMemoryDrawer() {
@@ -370,7 +409,20 @@ function getAppliedModelConfigs() {
 }
 
 function updateStartButtonState() {
-    startBtn.disabled = getAppliedModelConfigs().length < 2
+    startBtn.disabled = running || paused || historyContinuationPending || getAppliedModelConfigs().length < 2
+}
+
+function canApplyModelSelection() {
+    return (!running && !historyContinuationPending) || sessionPausedForModelChanges
+}
+
+function updateModelApplyButtonState() {
+    if (!modelApplyBtn) return
+    const disabled = !canApplyModelSelection()
+    modelApplyBtn.disabled = disabled
+    modelApplyBtn.title = disabled
+        ? "Pause the session before applying model changes"
+        : "Apply selected model changes"
 }
 
 function renderModelSelector() {
@@ -426,6 +478,7 @@ function renderModelSelector() {
         selectAllBox.checked = availableModels.length > 0 && selectedModels === availableModels.length
     }
     updateStartButtonState()
+    updateModelApplyButtonState()
 }
 
 function normalizeSection(section) {
@@ -587,6 +640,151 @@ function renderMemory(memory, contextPreview) {
     contextView.textContent = contextPreview || "(no context yet)"
 }
 
+function formatHistoryTimestamp(value) {
+    if (!value) return "unknown time"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleString([], {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    })
+}
+
+function renderHistoryList(items) {
+    if (!historyList) return
+    if (!Array.isArray(items) || !items.length) {
+        historyList.innerHTML = `<div class="detail-row">No saved chats yet</div>`
+        if (historyMeta) historyMeta.textContent = "Saved chats appear after New Chat is clicked at the end of a session."
+        return
+    }
+
+    if (historyMeta) historyMeta.textContent = `${items.length} saved chat${items.length === 1 ? "" : "s"}`
+    historyList.innerHTML = items.map((item) => `
+        <button type="button" class="history-item" onclick="loadPreviousChat('${escapeJsString(item.id)}')">
+            <span class="history-title">${escapeHtml(item.title || "Untitled chat")}</span>
+            <span class="history-time">${escapeHtml(formatHistoryTimestamp(item.saved_at))} · ${Number(item.agent_count || 0)} agents · ${Number(item.response_count || 0)} turns</span>
+        </button>
+    `).join("")
+}
+
+async function loadHistoryList(showStatus = true) {
+    if (!historyList) return
+    const res = await fetch("/history")
+    const data = await res.json()
+    if (data.status === "error") {
+        if (showStatus) setSessionStatus("Could not load saved chats.", "error", 7000)
+        return
+    }
+    renderHistoryList(data.items || [])
+}
+
+function buildTurnDetailsFromResponse(response) {
+    return buildTurnDetails({
+        round: response.round,
+        agent: response.agent,
+        agent_model: response.model,
+        selection_reason: response.selection_reason,
+        ignored: response.accepted === false,
+        ignored_reason: response.ignored_reason,
+        quota_left: response.quota_left,
+        queued_interrupts: [],
+        intent_hand_raise: response.intent_hand_raise,
+        intent_priority: response.intent_priority,
+        intent_priority_rank: response.intent_priority_rank,
+        intent_confidence: response.intent_confidence,
+        intent_pointer: response.intent_pointer,
+    })
+}
+
+function renderRestoredResponse(response) {
+    const agent = response.agent || "System"
+    if (agent === "Human") {
+        addMessage("human", response.text || "")
+        return
+    }
+    if (agent === "System") {
+        addMessage("system", `**System**\n\n${response.text || ""}`)
+        return
+    }
+    addMessage(
+        agent.replace(" ", "").toLowerCase(),
+        `${formatAgentHeading(agent, response.model)}\n\n${response.text || ""}`,
+        {
+            bubbleBackground: getAgentBubble(agent),
+            turnDetails: buildTurnDetailsFromResponse(response),
+        }
+    )
+}
+
+function renderTerminalHistoryEvent(events, responses) {
+    const terminal = [...(events || [])].reverse().find((event) => {
+        const payload = event && event.payload
+        return payload && payload.status === "done" && payload.text
+    })
+    if (!terminal) return
+    const lastResponse = Array.isArray(responses) && responses.length ? responses[responses.length - 1] : null
+    if (lastResponse && lastResponse.text === terminal.payload.text) return
+    const agent = terminal.payload.agent || "System"
+    const heading = agent === "System" || agent === "Human"
+        ? `**${agent}**`
+        : formatAgentHeading(agent, terminal.payload.agent_model)
+    addMessage("system", `${heading}\n\n${terminal.payload.text}`)
+}
+
+function renderLoadedHistorySession(payload) {
+    const agents = payload.agents || []
+    const responses = payload.responses || []
+    setupAgentStyling(agents)
+    appliedModelConfigs = cloneConfigs(agents.map((a) => ({
+        model: a.model,
+        section: a.section || defaultSection,
+    })))
+    setDraftFromConfigs(appliedModelConfigs)
+
+    questionInput.value = payload.question || ""
+    chat.innerHTML = ""
+    addMessage("human", payload.question || "(no prompt saved)")
+    responses.forEach(renderRestoredResponse)
+    renderTerminalHistoryEvent(payload.history_events, responses)
+    renderMemory(payload.memory, payload.context_preview)
+    updateHandQueue(payload.queued_interrupts || [])
+    scrollBottom()
+}
+
+async function loadPreviousChat(historyId) {
+    if (running || paused || historyContinuationPending || sessionHasSaveCandidate) {
+        setSessionStatus("Finish and save the current session before loading a previous chat.", "warning", 7000)
+        return
+    }
+
+    showLoading("Loading saved chat...")
+    const res = await fetch(`/history/${encodeURIComponent(historyId)}/load`, { method: "POST" })
+    const data = await res.json()
+    hideLoading()
+    if (data.status === "error") {
+        setSessionStatus(`Could not load chat: ${data.error || "unknown error"}`, "error", 7000)
+        return
+    }
+
+    loadedHistoryId = historyId
+    historyContinuationPending = true
+    running = false
+    paused = true
+    sessionPausedForModelChanges = false
+    sessionHasSaveCandidate = false
+    renderLoadedHistorySession(data.session || {})
+    hideHumanTurnOptions()
+    hideFinalizationOptions()
+    updateStartButtonState()
+    updateModelApplyButtonState()
+    setNewChatAvailability(false)
+    showCommandBox("history_redirect", "CONTINUE SAVED CHAT: REDIRECT", "Enter redirect objective to continue this saved chat...")
+    setSessionStatus("Loaded saved chat. Add a redirect to continue.", "info", 0)
+}
+
 function showHumanTurnOptions() {
     document.getElementById("human-turn-options").classList.remove("hidden")
 }
@@ -606,7 +804,7 @@ function hideFinalizationOptions() {
 function isCommandReady() {
     const msg = commandInput.value.trim()
     if (!msg) return false
-    if (commandType === "human_turn_redirect" || commandType === "finalize_redirect") {
+    if (commandType === "human_turn_redirect" || commandType === "finalize_redirect" || commandType === "history_redirect") {
         const turns = parseInt(redirectTurnsInput.value || "3", 10)
         return Number.isFinite(turns) && turns >= 1
     }
@@ -624,7 +822,7 @@ function showCommandBox(type, label, placeholder) {
     commandInput.placeholder = placeholder
     commandInput.value = ""
 
-    if (type === "human_turn_redirect" || type === "finalize_redirect") {
+    if (type === "human_turn_redirect" || type === "finalize_redirect" || type === "history_redirect") {
         redirectTurnsInput.classList.remove("hidden")
     } else {
         redirectTurnsInput.classList.add("hidden")
@@ -726,6 +924,12 @@ async function beginSession(question, modelConfigs = null) {
 
     running = true
     paused = false
+    sessionPausedForModelChanges = false
+    historyContinuationPending = false
+    loadedHistoryId = null
+    sessionHasSaveCandidate = true
+    updateModelApplyButtonState()
+    updateStartButtonState()
     setNewChatAvailability(false)
     loopEpoch += 1
     hideHumanTurnOptions()
@@ -799,7 +1003,7 @@ async function applyModelSelection() {
         return
     }
 
-    if (running && !paused) {
+    if (!canApplyModelSelection()) {
         setSessionStatus("Pause the session before applying model changes.", "warning")
         return
     }
@@ -858,6 +1062,10 @@ async function loop() {
     if (data.status === "error") {
         setSessionStatus("Session paused due to an internal error.", "error", 7000)
         running = false
+        sessionHasSaveCandidate = false
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
         setNewChatAvailability(true)
         clearLoading()
         return
@@ -865,12 +1073,18 @@ async function loop() {
 
     if (data.status === "paused") {
         paused = true
+        sessionPausedForModelChanges = true
+        updateModelApplyButtonState()
+        updateStartButtonState()
         clearLoading()
         return
     }
 
     if (data.status === "awaiting_human_turn") {
         paused = true
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
         setSessionStatus("Human turn selected. Choose Inject or Redirect.", "info", 0)
         showHumanTurnOptions()
         clearLoading()
@@ -879,6 +1093,9 @@ async function loop() {
 
     if (data.status === "awaiting_human_finalization") {
         paused = true
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
         const candidate = data.finalization_candidate || {}
         if (candidate.text) {
             const candidateClass = (candidate.agent || "system").replace(" ", "").toLowerCase()
@@ -909,6 +1126,9 @@ async function loop() {
             : formatAgentHeading(data.agent, data.agent_model)
         addMessage("system", `${heading}\n\n${data.text}`)
         running = false
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
         setNewChatAvailability(true)
         hideHumanTurnOptions()
         hideFinalizationOptions()
@@ -937,17 +1157,27 @@ async function pause() {
     hideLoading()
 
     paused = true
+    sessionPausedForModelChanges = true
+    updateModelApplyButtonState()
+    updateStartButtonState()
     loopEpoch += 1
     clearLoading()
     setSessionStatus("Session paused", "warning")
 }
 
 async function resume() {
+    if (historyContinuationPending) {
+        setSessionStatus("Loaded chats must continue with a redirect.", "warning", 7000)
+        return
+    }
     showLoading("Resuming session...")
     await fetch("/resume", { method: "POST" })
     hideLoading()
 
     paused = false
+    sessionPausedForModelChanges = false
+    updateModelApplyButtonState()
+    updateStartButtonState()
     loopEpoch += 1
     setSessionStatus("Session resumed", "success")
 
@@ -978,6 +1208,9 @@ async function stopReasoning() {
     hideFinalizationOptions()
     running = false
     paused = false
+    sessionPausedForModelChanges = false
+    updateModelApplyButtonState()
+    updateStartButtonState()
     setNewChatAvailability(true)
     loopEpoch += 1
     clearLoading()
@@ -1031,6 +1264,9 @@ async function approveStop() {
     hideFinalizationOptions()
     running = false
     paused = false
+    sessionPausedForModelChanges = false
+    updateModelApplyButtonState()
+    updateStartButtonState()
     setNewChatAvailability(true)
     loopEpoch += 1
 }
@@ -1052,6 +1288,9 @@ async function continueIteration() {
     renderMemory(data.memory, data.context_preview)
     hideFinalizationOptions()
     paused = false
+    sessionPausedForModelChanges = false
+    updateModelApplyButtonState()
+    updateStartButtonState()
     loopEpoch += 1
     setTimeout(loop, 300)
 }
@@ -1081,6 +1320,9 @@ async function submitCommand() {
         addMessage("human", `Inject: ${msg}`)
         hideHumanTurnOptions()
         paused = false
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
         loopEpoch += 1
         setTimeout(loop, 300)
     }
@@ -1108,6 +1350,9 @@ async function submitCommand() {
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideHumanTurnOptions()
         paused = false
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
         loopEpoch += 1
         setTimeout(loop, 300)
     }
@@ -1135,6 +1380,42 @@ async function submitCommand() {
         addMessage("human", `Redirect (${turns} turns): ${msg}`)
         hideFinalizationOptions()
         paused = false
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
+        loopEpoch += 1
+        setTimeout(loop, 300)
+    }
+
+    if (commandType === "history_redirect") {
+        const turnsRaw = redirectTurnsInput.value
+        const turns = Math.max(1, parseInt(turnsRaw || "3", 10))
+
+        showLoading("Continuing saved chat...")
+        const res = await fetch("/history/continue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: msg, turns })
+        })
+        const data = await res.json()
+        hideLoading()
+
+        if (data.status === "error") {
+            setSessionStatus("Saved chat continuation failed.", "error", 7000)
+            return
+        }
+
+        renderMemory(data.memory, data.context_preview)
+        updateHandQueue(data.queued_interrupts)
+        addMessage("human", `Redirect (${turns} turns): ${msg}`)
+        historyContinuationPending = false
+        sessionHasSaveCandidate = true
+        running = true
+        paused = false
+        sessionPausedForModelChanges = false
+        updateModelApplyButtonState()
+        updateStartButtonState()
+        setNewChatAvailability(false)
         loopEpoch += 1
         setTimeout(loop, 300)
     }
@@ -1185,6 +1466,8 @@ function renderQueuePanel() {
 loadModels()
 openSidebarSection(activeSidebarSection, false)
 setNewChatAvailability(true)
+updateModelApplyButtonState()
+loadHistoryList(false)
 commandInput.addEventListener("input", updateCommandSendState)
 redirectTurnsInput.addEventListener("input", updateCommandSendState)
 questionInput.addEventListener("input", () => {

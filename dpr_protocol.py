@@ -1,7 +1,9 @@
 import time
+from copy import deepcopy
 from collections import deque
 
 import requests
+from dpr_history import now_iso
 from dpr_constants import (
     AVAILABLE_MODELS,
     DEFAULT_AGENT_MODELS,
@@ -60,6 +62,13 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
 
         self.question = question
         self.turn = 0
+        self.max_turns = MAX_TURNS
+        self.created_at = now_iso()
+        self.finished_at = None
+        self.ended = False
+        self.end_reason = None
+        self.loaded_from_history_id = None
+        self.awaiting_history_redirect = False
 
         self.responses = []
         self.stopped_by_human = False
@@ -101,6 +110,166 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
         self.last_selection_reason = ""
         self.bootstrap_done = False
         self.pointer_history = []  # recent selected pointers
+        self.broadcast_events = []
+        self.history_events = []
+
+        self.record_event("session_started", {
+            "question": self.question,
+            "agents": self.agents,
+        })
+
+    def _jsonable(self, value):
+        if isinstance(value, deque):
+            return [self._jsonable(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): self._jsonable(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._jsonable(v) for v in value]
+        return value
+
+    def record_event(self, kind, payload=None):
+        self.history_events.append({
+            "timestamp": now_iso(),
+            "turn": self.turn,
+            "kind": kind,
+            "payload": self._jsonable(payload or {}),
+        })
+
+    def _mark_ended(self, reason):
+        self.ended = True
+        self.end_reason = reason
+        self.finished_at = self.finished_at or now_iso()
+
+    def _runtime_state_snapshot(self):
+        return {
+            "turn": self.turn,
+            "max_turns": self.max_turns,
+            "quotas": dict(self.quotas),
+            "last_spoke": dict(self.last_spoke),
+            "hand_queue": list(self.hand_queue),
+            "intent_queue": list(self.intent_queue),
+            "human_hand_raised": self.human_hand_raised,
+            "awaiting_human_turn": self.awaiting_human_turn,
+            "awaiting_human_finalization": self.awaiting_human_finalization,
+            "finalization_candidate": deepcopy(self.finalization_candidate),
+            "current_index": self.current_index,
+            "last_speaker": self.last_speaker,
+            "repeat_streak": self.repeat_streak,
+            "pending_human_instruction": self.pending_human_instruction,
+            "pending_redirect": deepcopy(self.pending_redirect),
+            "stopped_by_human": self.stopped_by_human,
+            "paused": self.paused,
+            "bootstrap_done": self.bootstrap_done,
+            "pointer_history": list(self.pointer_history),
+            "last_context_snapshot": self.last_context_snapshot,
+            "agent_scores": dict(self.agent_scores),
+            "hand_raise_scores": dict(self.hand_raise_scores),
+            "last_selection_reason": self.last_selection_reason,
+        }
+
+    def to_history_document(self):
+        return self._jsonable({
+            "schema_version": 1,
+            "created_at": self.created_at,
+            "finished_at": self.finished_at,
+            "question": self.question,
+            "agents": self.agents,
+            "turn": self.turn,
+            "max_turns": self.max_turns,
+            "ended": self.ended,
+            "end_reason": self.end_reason,
+            "continuation_of": self.loaded_from_history_id,
+            "responses": self.responses,
+            "ignored_responses": self.ignored_responses,
+            "facilitator_log": self.facilitator_log,
+            "shared_memory": self.shared_memory,
+            "broadcast_events": self.broadcast_events,
+            "history_events": self.history_events,
+            "runtime_state": self._runtime_state_snapshot(),
+        })
+
+    @classmethod
+    def from_history_document(cls, document, history_id=None):
+        agents = document.get("agents") or []
+        selected = [
+            {"model": a.get("model"), "section": a.get("section", DEFAULT_SECTION)}
+            for a in agents
+            if a.get("model")
+        ]
+        session = cls(document.get("question", ""), selected_models=selected or None)
+        state = document.get("runtime_state") or {}
+
+        session.created_at = document.get("created_at") or session.created_at
+        session.finished_at = None
+        session.ended = False
+        session.end_reason = None
+        session.loaded_from_history_id = history_id or document.get("id")
+        session.awaiting_history_redirect = True
+
+        session.responses = deepcopy(document.get("responses", []))
+        session.ignored_responses = deepcopy(document.get("ignored_responses", []))
+        session.facilitator_log = deepcopy(document.get("facilitator_log", []))
+        memory = deepcopy(document.get("shared_memory", {}))
+        for key in ["facts", "options", "decisions", "open_questions", "actions", "changelog"]:
+            session.shared_memory[key] = list(memory.get(key, []))
+
+        session.broadcast_events = deepcopy(document.get("broadcast_events", []))
+        session.history_events = deepcopy(document.get("history_events", []))
+
+        session.turn = int(state.get("turn", document.get("turn", session.turn)) or 0)
+        session.max_turns = int(
+            state.get("max_turns", document.get("max_turns", session.turn + MAX_TURNS))
+            or (session.turn + MAX_TURNS)
+        )
+        session.quotas = {
+            a["name"]: int((state.get("quotas") or {}).get(a["name"], STARTING_QUOTA) or 0)
+            for a in session.agents
+        }
+        if all(q <= 0 for q in session.quotas.values()):
+            session.quotas = {a["name"]: STARTING_QUOTA for a in session.agents}
+        session.last_spoke = {
+            a["name"]: int((state.get("last_spoke") or {}).get(a["name"], -1))
+            for a in session.agents
+        }
+        session.hand_queue = deque()
+        session.intent_queue = deque()
+        session.human_hand_raised = False
+        session.awaiting_human_turn = False
+        session.awaiting_human_finalization = False
+        session.finalization_candidate = None
+        session.current_index = int(state.get("current_index", 0) or 0)
+        session.last_speaker = state.get("last_speaker")
+        session.repeat_streak = int(state.get("repeat_streak", 0) or 0)
+        session.pending_human_instruction = None
+        session.pending_redirect = None
+        session.stopped_by_human = False
+        session.paused = True
+        session.bootstrap_done = bool(state.get("bootstrap_done", bool(session.responses)))
+        session.pointer_history = list(state.get("pointer_history", []))
+        session.last_context_snapshot = state.get("last_context_snapshot", "")
+        session.agent_scores = dict(state.get("agent_scores", {}))
+        session.hand_raise_scores = dict(state.get("hand_raise_scores", {}))
+        session.last_selection_reason = "Loaded previous chat. Redirect required to continue."
+        session.record_event("history_loaded", {
+            "history_id": session.loaded_from_history_id,
+            "source_saved_at": document.get("saved_at"),
+        })
+        return session
+
+    def restore_payload(self):
+        return {
+            "question": self.question,
+            "agents": list(self.agents),
+            "responses": deepcopy(self.responses),
+            "ignored_responses": deepcopy(self.ignored_responses),
+            "facilitator_log": deepcopy(self.facilitator_log),
+            "broadcast_events": deepcopy(self.broadcast_events),
+            "history_events": deepcopy(self.history_events),
+            "queued_interrupts": list(self.hand_queue),
+            "turn": self.turn,
+            "max_turns": self.max_turns,
+            **self._state_payload(),
+        }
 
     def update_agents(self, selected_models):
         if not self.paused:
@@ -138,6 +307,7 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             self.last_speaker = None
             self.repeat_streak = 0
 
+        self.record_event("models_updated", {"agents": self.agents})
         return list(self.agents)
 
     def _agent_index(self, agent_name):
@@ -161,6 +331,7 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
     # --------------------------------------------
     def step(self):
         if self.stopped_by_human:
+            self._mark_ended("stopped_by_human")
             return {
                 "status": "done",
                 "agent": HUMAN_NAME,
@@ -184,7 +355,18 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
                 **self._state_payload(),
             }
 
-        if self.turn >= MAX_TURNS:
+        if self.awaiting_history_redirect:
+            return {
+                "status": "awaiting_history_redirect",
+                "agent": HUMAN_NAME,
+                "agent_model": None,
+                "text": "Loaded chat requires a human redirect before continuing.",
+                "round": self.turn,
+                **self._state_payload(),
+            }
+
+        if self.turn >= self.max_turns:
+            self._mark_ended("max_turns_reached")
             return {
                 "status": "done",
                 "agent": "System",
@@ -201,6 +383,7 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             selected = self._next_from_queue_or_broadcast()
 
         if not selected:
+            self._mark_ended("all_agents_exhausted_quotas")
             return {
                 "status": "done",
                 "agent": "System",
@@ -369,8 +552,16 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
 
         entry = {
             "agent": agent_name,
+            "model": model,
             "text": answer,
             "accepted": ignored_reason is None,
+            "round": self.turn,
+            "selection_reason": self.last_selection_reason,
+            "intent_pointer": pointer_text,
+            "intent_priority": intent_priority,
+            "intent_priority_rank": intent_priority_rank,
+            "intent_confidence": intent_confidence,
+            "intent_hand_raise": intent_hand_raise,
         }
 
         self.responses.append(entry)
@@ -468,6 +659,8 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
     def resume(self):
         if self.stopped_by_human:
             return
+        if self.awaiting_history_redirect:
+            return
         self.paused = False
 
     def stop(self):
@@ -475,6 +668,7 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
         self.paused = False
         self.awaiting_human_finalization = False
         self.finalization_candidate = None
+        self._mark_ended("stopped_by_human")
 
     def inject(self, msg):
         self.pending_human_instruction = msg
@@ -482,6 +676,9 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
         entry = {
             "agent": HUMAN_NAME,
             "text": msg,
+            "accepted": True,
+            "round": self.turn,
+            "kind": "inject",
         }
         self.responses.append(entry)
         self._broadcast_for_queue()
@@ -506,6 +703,8 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             "agent": HUMAN_NAME,
             "text": msg,
             "accepted": True,
+            "round": self.turn,
+            "kind": "human_turn",
         }
         self.responses.append(entry)
         self._update_shared_memory(HUMAN_NAME, msg)
@@ -549,6 +748,8 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             "agent": HUMAN_NAME,
             "text": turn_text,
             "accepted": True,
+            "round": self.turn,
+            "kind": action,
         }
         self.responses.append(entry)
         self._update_shared_memory(HUMAN_NAME, turn_text)
@@ -583,6 +784,9 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
         entry = {
             "agent": HUMAN_NAME,
             "text": f"REDIRECT ({self.pending_redirect['remaining']} turns): {msg}",
+            "accepted": True,
+            "round": self.turn,
+            "kind": "redirect",
         }
         self.responses.append(entry)
         self._broadcast_for_queue()
@@ -596,6 +800,7 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
         self.awaiting_human_finalization = False
         self.finalization_candidate = None
         self.paused = False
+        self._mark_ended("finalization_approved")
 
         return {
             "status": "done",
@@ -612,6 +817,9 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
 
         self.awaiting_human_finalization = False
         self.finalization_candidate = None
+        self.ended = False
+        self.end_reason = None
+        self.finished_at = None
 
         if redirect_message:
             self.pending_redirect = {
@@ -622,6 +830,9 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             self.responses.append({
                 "agent": HUMAN_NAME,
                 "text": f"REDIRECT ({self.pending_redirect['remaining']} turns): {redirect_message}",
+                "accepted": True,
+                "round": self.turn,
+                "kind": "finalize_redirect",
             })
 
         self.paused = False
@@ -631,5 +842,55 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             "agent_model": None,
             "text": "Human requested continuation.",
             "round": self.turn,
+            **self._state_payload(),
+        }
+
+    def continue_from_history_redirect(self, redirect_message, turns=REDIRECT_DURATION_TURNS):
+        if not self.awaiting_history_redirect:
+            raise RuntimeError("No loaded history is awaiting redirect.")
+        redirect_message = (redirect_message or "").strip()
+        if not redirect_message:
+            raise RuntimeError("redirect message is required")
+
+        self.awaiting_history_redirect = False
+        self.paused = False
+        self.stopped_by_human = False
+        self.ended = False
+        self.end_reason = None
+        self.finished_at = None
+        self.pending_redirect = {
+            "message": redirect_message,
+            "remaining": max(1, int(turns)),
+        }
+        if self.turn >= self.max_turns:
+            self.max_turns = self.turn + MAX_TURNS
+        self._push_facilitator_event("history_redirect", f"Loaded chat redirected: {redirect_message}")
+
+        turn_text = f"REDIRECT ({self.pending_redirect['remaining']} turns): {redirect_message}"
+        self.responses.append({
+            "agent": HUMAN_NAME,
+            "text": turn_text,
+            "accepted": True,
+            "round": self.turn,
+            "kind": "history_redirect",
+        })
+        self._update_shared_memory(HUMAN_NAME, turn_text)
+        self._broadcast_for_queue()
+        self.record_event("history_continue_redirect", {
+            "message": redirect_message,
+            "turns": self.pending_redirect["remaining"],
+            "loaded_from_history_id": self.loaded_from_history_id,
+        })
+
+        return {
+            "status": "ok",
+            "agent": HUMAN_NAME,
+            "agent_model": None,
+            "text": turn_text,
+            "round": self.turn,
+            "ignored": False,
+            "ignored_reason": None,
+            "quota_left": None,
+            "queued_interrupts": list(self.hand_queue),
             **self._state_payload(),
         }

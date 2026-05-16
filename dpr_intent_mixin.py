@@ -212,6 +212,17 @@ Return ONLY JSON and make pointer strictly section-aligned:
 
         intents = []
         raw_candidates = []
+        broadcast_event = {
+            "turn": self.turn,
+            "memory_snapshot": memory_block,
+            "recent_turns": recent,
+            "human_instruction": human_instruction,
+            "redirect": redirect,
+            "recent_pointer_themes": recent_pointer_themes,
+            "agent_intents": [],
+            "raw_candidates": [],
+            "queued_intents": [],
+        }
         for agent in self.agents:
             name = agent["name"]
             remaining_quota = self.quotas.get(name, 0)
@@ -262,6 +273,15 @@ Rules:
   strong confidence, concrete pointer, and clear unresolved impact.
 """
             raw = ""
+            agent_record = {
+                "agent": name,
+                "model": agent["model"],
+                "section": section,
+                "remaining_quota": remaining_quota,
+                "attempts": [],
+                "accepted_for_queue": False,
+                "reject_reason": None,
+            }
             for _ in range(2):
                 try:
                     time.sleep(BROADCAST_CALL_DELAY_SECONDS)
@@ -271,24 +291,44 @@ Rules:
                         max_tokens=260,
                         temperature=0.1,
                     )
-                except Exception:
+                    parsed_attempt = self._parse_intent_response(raw)
+                    agent_record["attempts"].append({
+                        "status": "ok",
+                        "raw": raw,
+                        "parsed": parsed_attempt,
+                    })
+                except Exception as e:
                     raw = ""
+                    parsed_attempt = self._parse_intent_response(raw)
+                    agent_record["attempts"].append({
+                        "status": "error",
+                        "error": str(e),
+                        "raw": raw,
+                        "parsed": parsed_attempt,
+                    })
                 intent = self._parse_intent_response(raw)
                 if intent["hand_raise"] or intent["pointer"]:
                     break
             intent = self._parse_intent_response(raw)
+            agent_record["parsed_intent"] = dict(intent)
             if intent.get("pointer"):
                 raw_candidates.append({"agent": name, "section": section, **intent})
+                broadcast_event["raw_candidates"].append({"agent": name, "section": section, **intent})
             if not (intent["hand_raise"] and intent["pointer"]):
+                agent_record["reject_reason"] = "no_hand_raise_or_pointer"
+                broadcast_event["agent_intents"].append(agent_record)
                 continue
 
             # section-fit validation and one retry if mismatch
             fit = self._section_fit_score(section, intent["pointer"])
+            agent_record["section_fit_score"] = fit
             if section != "general" and fit < 0.15:
                 retried = self._intent_retry_for_section_fit(agent, memory_block, recent_block, human_instruction, redirect)
                 if retried and retried.get("hand_raise") and retried.get("pointer"):
+                    agent_record["section_retry"] = dict(retried)
                     intent = retried
                     fit = self._section_fit_score(section, intent["pointer"])
+                    agent_record["section_fit_score"] = fit
             if section != "general" and fit < 0.15:
                 intent["priority_rank"] = max(2, intent["priority_rank"])
                 intent["priority_label"] = "medium"
@@ -320,9 +360,16 @@ Rules:
                     or (section != "general" and fit < 0.25)
                 )
                 if low_quota_reject:
+                    agent_record["reject_reason"] = "low_quota_quality_gate"
+                    agent_record["final_intent"] = dict(intent)
+                    broadcast_event["agent_intents"].append(agent_record)
                     continue
 
-            intents.append({"agent": name, "section": section, **intent})
+            queued_intent = {"agent": name, "section": section, **intent}
+            agent_record["accepted_for_queue"] = True
+            agent_record["final_intent"] = dict(queued_intent)
+            broadcast_event["agent_intents"].append(agent_record)
+            intents.append(queued_intent)
 
         # dedupe near-duplicate pointers: keep highest confidence among similar themes
         deduped = []
@@ -379,6 +426,14 @@ Rules:
         self.intent_queue = deque(deduped)
         self.hand_queue = deque([x["agent"] for x in deduped])
         self.last_selection_reason = f"Broadcast produced {len(deduped)} raised hands."
+        broadcast_event["valid_intents"] = list(intents)
+        broadcast_event["queued_intents"] = list(deduped)
+        self.broadcast_events.append(broadcast_event)
+        if hasattr(self, "record_event"):
+            self.record_event("broadcast", {
+                "raised_count": len(deduped),
+                "queued_agents": [x["agent"] for x in deduped],
+            })
         self.pending_human_instruction = None
 
     # --------------------------------------------

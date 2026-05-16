@@ -29,7 +29,7 @@
             <div class="sidebar-content">
                 <section id="models-drawer" class="sidebar-panel active" data-section="models">
                     <div class="sidebar-panel-actions">
-                        <button class="btn btn-muted sidebar-apply-btn" onclick="applyModelSelection()">Apply</button>
+                        <button id="model-apply-btn" class="btn btn-muted sidebar-apply-btn" onclick="applyModelSelection()">Apply</button>
                     </div>
                     <div class="memory-content">
                         <p id="model-count" class="models-meta">Select at least 2 models.</p>
@@ -57,6 +57,22 @@
                         <div id="queue-track" class="queue-track"></div>
                     </div>
                 </section>
+
+                <section id="history-drawer" class="sidebar-panel" data-section="history">
+                    <div class="sidebar-panel-actions">
+                        <button class="btn btn-muted sidebar-apply-btn" onclick="loadHistoryList()">Refresh Saved Chats</button>
+                    </div>
+                    <div class="memory-content">
+                        <p id="history-meta" class="models-meta">Saved chats appear after New Chat is clicked at the end of a session.</p>
+                        <div id="history-list" class="history-list"></div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="sidebar-bottom">
+                <button id="nav-history" class="icon-btn sidebar-nav-btn sidebar-history-btn" onclick="openSidebarSection('history')" title="View Previous Chats">
+                    <span class="nav-icon">H</span><span class="nav-label">View Previous Chats</span>
+                </button>
             </div>
         </aside>
 
