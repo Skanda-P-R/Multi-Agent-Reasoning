@@ -26,6 +26,7 @@ const redirectTurnsInput = document.getElementById("redirect-turns")
 const modelsDrawer = document.getElementById("models-drawer")
 const modelsList = document.getElementById("models-list")
 const modelCount = document.getElementById("model-count")
+const leftSidebar = document.getElementById("left-sidebar")
 const memoryDrawer = document.getElementById("memory-drawer")
 const queueDrawer = document.getElementById("queue-drawer")
 const memoryView = document.getElementById("memory-view")
@@ -37,8 +38,12 @@ const loadingIndicator = document.getElementById("loading-indicator")
 const loadingText = document.getElementById("loading-text")
 const detailsModal = document.getElementById("details-modal")
 const detailsBody = document.getElementById("details-body")
+const sessionStatusBadge = document.getElementById("session-status-badge")
+const newChatBtn = document.getElementById("new-chat-btn")
 let loadingCounter = 0
 let loadingMessage = "Working..."
+let activeSidebarSection = "models"
+let sessionStatusTimer = null
 
 function showLoading(message = "Working...") {
     loadingCounter += 1
@@ -99,8 +104,7 @@ function formatAgentHeading(agent, agentModel) {
 function generateAgentBubble(index, total) {
     const t = Math.max(total, 2)
     const hue = Math.round((index * 360) / t)
-    const hue2 = (hue + 20) % 360
-    return `linear-gradient(135deg, hsla(${hue} 58% 58% / 0.88), hsla(${hue2} 62% 50% / 0.9))`
+    return `hsl(${hue} 64% 58%)`
 }
 
 function setupAgentStyling(agents) {
@@ -137,7 +141,7 @@ function addMessage(role, text, options = {}) {
 `
     if (options.bubbleBackground) {
         const bubble = div.querySelector(".bubble")
-        bubble.style.background = options.bubbleBackground
+        bubble.style.setProperty("--agent-accent", options.bubbleBackground)
     }
 
     if (options.turnDetails) {
@@ -155,6 +159,42 @@ function addMessage(role, text, options = {}) {
 
 function addSystem(text) {
     addMessage("system", text)
+}
+
+function setSessionStatus(text, level = "info", durationMs = 4000) {
+    if (!sessionStatusBadge) return
+    if (sessionStatusTimer) {
+        clearTimeout(sessionStatusTimer)
+        sessionStatusTimer = null
+    }
+    if (!text) {
+        sessionStatusBadge.classList.add("hidden")
+        sessionStatusBadge.classList.remove("status-info", "status-success", "status-warning", "status-error")
+        return
+    }
+    sessionStatusBadge.classList.remove("status-info", "status-success", "status-warning", "status-error")
+    sessionStatusBadge.classList.add(`status-${level}`)
+    sessionStatusBadge.textContent = text
+    sessionStatusBadge.classList.remove("hidden")
+    if (durationMs > 0) {
+        sessionStatusTimer = setTimeout(() => {
+            sessionStatusBadge.classList.add("hidden")
+            sessionStatusBadge.classList.remove("status-info", "status-success", "status-warning", "status-error")
+            sessionStatusTimer = null
+        }, durationMs)
+    }
+}
+
+function setNewChatAvailability(isEnabled) {
+    if (!newChatBtn) return
+    newChatBtn.disabled = !isEnabled
+    if (isEnabled) {
+        newChatBtn.textContent = "New Chat"
+        newChatBtn.title = "Start a new chat"
+    } else {
+        newChatBtn.textContent = "Session running"
+        newChatBtn.title = "Wait for session completion"
+    }
 }
 
 function toPercent(value) {
@@ -258,26 +298,53 @@ document.addEventListener("keydown", (event) => {
     }
 })
 
+function ensureSidebarOpen() {
+    if (!leftSidebar) return
+    leftSidebar.classList.add("expanded")
+}
+
+function toggleSidebar() {
+    if (!leftSidebar) return
+    leftSidebar.classList.toggle("expanded")
+}
+
+function startNewChat() {
+    if (running || paused) return
+    window.location.reload()
+}
+
+function openSidebarSection(section, shouldExpand = true) {
+    activeSidebarSection = section
+    if (shouldExpand) ensureSidebarOpen()
+
+    const panels = document.querySelectorAll(".sidebar-panel")
+    panels.forEach((panel) => {
+        const isActive = panel.dataset.section === section
+        panel.classList.toggle("active", isActive)
+    })
+
+    const navButtons = document.querySelectorAll(".sidebar-nav-btn")
+    navButtons.forEach((btn) => btn.classList.remove("active"))
+    const activeBtnId = section === "models" ? "nav-models" : section === "context" ? "nav-context" : "nav-queue"
+    const activeBtn = document.getElementById(activeBtnId)
+    if (activeBtn) activeBtn.classList.add("active")
+}
+
 function toggleMemoryDrawer() {
-    memoryDrawer.classList.toggle("open")
+    openSidebarSection("context")
 }
 
 function toggleQueueDrawer() {
-    queueDrawer.classList.toggle("open")
+    openSidebarSection("queue")
 }
 
 function toggleModelsDrawer() {
-    if (modelsDrawer.classList.contains("open")) {
-        closeModelsDrawer()
-        return
-    }
     setDraftFromConfigs(appliedModelConfigs)
-    modelsDrawer.classList.add("open")
+    openSidebarSection("models")
 }
 
 function closeModelsDrawer() {
     setDraftFromConfigs(appliedModelConfigs)
-    modelsDrawer.classList.remove("open")
 }
 
 function cloneConfigs(configs) {
@@ -595,7 +662,7 @@ async function fetchSuggestion(question) {
     })
     const data = await res.json()
     if (data.status === "error") {
-        addSystem(`Error: ${data.error}`)
+        setSessionStatus("Unable to load models right now.", "error", 7000)
         hideLoading()
         return null
     }
@@ -625,7 +692,7 @@ function applySuggestedModels() {
 async function beginSession(question, modelConfigs = null) {
     const finalConfigs = Array.isArray(modelConfigs) ? modelConfigs : getAppliedModelConfigs()
     if (finalConfigs.length < 2) {
-        addSystem("Select at least 2 models before starting.")
+        setSessionStatus("Select at least 2 models before starting.", "warning")
         return
     }
 
@@ -647,7 +714,8 @@ async function beginSession(question, modelConfigs = null) {
     })
     const data = await res.json()
     if (data.status === "error") {
-        addSystem(`Error: ${data.error}`)
+        setSessionStatus("Could not start session.", "error", 7000)
+        setNewChatAvailability(true)
         hideLoading()
         return
     }
@@ -658,6 +726,7 @@ async function beginSession(question, modelConfigs = null) {
 
     running = true
     paused = false
+    setNewChatAvailability(false)
     loopEpoch += 1
     hideHumanTurnOptions()
     hideFinalizationOptions()
@@ -670,7 +739,7 @@ async function start() {
     const q = questionInput.value.trim()
     if (!q) return
     if (getAppliedModelConfigs().length < 2) {
-        addSystem("Select at least 2 models before starting.")
+        setSessionStatus("Select at least 2 models before starting.", "warning")
         return
     }
 
@@ -683,7 +752,7 @@ async function start() {
         suggestedQuestion = q
         if (!pendingSuggestion) return
         renderSuggestionPanel(pendingSuggestion)
-        addSystem("Review auto-selected models. Approve suggestion or edit manually.")
+        setSessionStatus("Review auto-selected models. Approve or edit manually.", "info", 0)
         return
     }
 
@@ -699,7 +768,7 @@ async function approveSuggestedModels() {
     if (!pendingSuggestion) return
     applySuggestedModels()
     if (!approvedSuggestedModels || approvedSuggestedModels.length < 2) {
-        addSystem("Suggested selection has fewer than 2 valid model entries.")
+        setSessionStatus("Suggested selection has fewer than 2 valid models.", "warning")
         return
     }
     suggestionApproved = true
@@ -719,19 +788,19 @@ function useManualSelection() {
     suggestionApproved = false
     approvedSuggestedModels = null
     suggestionBox.classList.add("hidden")
-    modelsDrawer.classList.add("open")
-    addSystem("Manual model selection enabled. Choose models/sections, then press Start.")
+    openSidebarSection("models")
+    setSessionStatus("Manual model selection enabled. Press Apply to start.", "info", 0)
 }
 
 async function applyModelSelection() {
     const selected = getSelectedModelConfigs()
     if (selected.length < 2) {
-        addSystem("Select at least 2 model-section entries.")
+        setSessionStatus("Select at least 2 model-section entries.", "warning")
         return
     }
 
     if (running && !paused) {
-        addSystem("Pause the session before applying model changes.")
+        setSessionStatus("Pause the session before applying model changes.", "warning")
         return
     }
 
@@ -745,15 +814,29 @@ async function applyModelSelection() {
         const data = await res.json()
         hideLoading()
         if (data.status === "error") {
-            addSystem(`Error: ${data.error}`)
+            setSessionStatus("Could not apply model changes.", "error", 7000)
             return
         }
         setupAgentStyling(data.agents || [])
-        addSystem(`Applied ${selected.length} model-section entries to the paused session.`)
+        setSessionStatus(`Applied ${selected.length} model-section entries.`, "success")
     }
 
     appliedModelConfigs = cloneConfigs(selected)
     closeModelsDrawer()
+
+    const shouldAutoStartManualFlow = !running && pendingSuggestion && manualSelectionChosen
+    if (shouldAutoStartManualFlow) {
+        const q = questionInput.value.trim()
+        if (!q) {
+            setSessionStatus("Question is empty. Enter a question to start.", "warning")
+            return
+        }
+        manualSelectionChosen = false
+        pendingSuggestion = null
+        suggestionBox.classList.add("hidden")
+        leftSidebar?.classList.remove("expanded")
+        await beginSession(q, selected)
+    }
 }
 
 async function loop() {
@@ -773,8 +856,9 @@ async function loop() {
     updateHandQueue(data.queued_interrupts)
 
     if (data.status === "error") {
-        addSystem(`Error: ${data.error || "Unknown server error"}`)
+        setSessionStatus("Session paused due to an internal error.", "error", 7000)
         running = false
+        setNewChatAvailability(true)
         clearLoading()
         return
     }
@@ -787,7 +871,7 @@ async function loop() {
 
     if (data.status === "awaiting_human_turn") {
         paused = true
-        addSystem("Human turn selected. Choose Inject or Redirect.")
+        setSessionStatus("Human turn selected. Choose Inject or Redirect.", "info", 0)
         showHumanTurnOptions()
         clearLoading()
         return
@@ -813,9 +897,7 @@ async function loop() {
                 }
             )
         }
-        addSystem(
-            `Completion candidate by ${formatAgentHeading(candidate.agent || "Agent", candidate.model)}. Human approval required.`
-        )
+        setSessionStatus("Completion candidate ready. Approval required.", "info", 0)
         showFinalizationOptions()
         clearLoading()
         return
@@ -827,6 +909,7 @@ async function loop() {
             : formatAgentHeading(data.agent, data.agent_model)
         addMessage("system", `${heading}\n\n${data.text}`)
         running = false
+        setNewChatAvailability(true)
         hideHumanTurnOptions()
         hideFinalizationOptions()
         clearLoading()
@@ -856,7 +939,7 @@ async function pause() {
     paused = true
     loopEpoch += 1
     clearLoading()
-    addMessage("system", "Session paused")
+    setSessionStatus("Session paused", "warning")
 }
 
 async function resume() {
@@ -866,7 +949,7 @@ async function resume() {
 
     paused = false
     loopEpoch += 1
-    addMessage("system", "Session resumed")
+    setSessionStatus("Session resumed", "success")
 
     loop()
 }
@@ -878,7 +961,7 @@ async function stopReasoning() {
     hideLoading()
 
     if (data.status === "error") {
-        addSystem(`Error: ${data.error}`)
+        setSessionStatus("Could not stop session.", "error", 7000)
         return
     }
 
@@ -895,6 +978,7 @@ async function stopReasoning() {
     hideFinalizationOptions()
     running = false
     paused = false
+    setNewChatAvailability(true)
     loopEpoch += 1
     clearLoading()
 }
@@ -906,7 +990,7 @@ async function raiseHand() {
     hideLoading()
 
     if (data.status === "error") {
-        addSystem(`Error: ${data.error}`)
+        setSessionStatus("Could not raise hand.", "error", 7000)
         return
     }
 
@@ -935,7 +1019,7 @@ async function approveStop() {
     const data = await res.json()
     hideLoading()
     if (data.status === "error") {
-        addSystem(`Error: ${data.error}`)
+        setSessionStatus("Could not finalize completion.", "error", 7000)
         return
     }
 
@@ -947,6 +1031,7 @@ async function approveStop() {
     hideFinalizationOptions()
     running = false
     paused = false
+    setNewChatAvailability(true)
     loopEpoch += 1
 }
 
@@ -960,7 +1045,7 @@ async function continueIteration() {
     const data = await res.json()
     hideLoading()
     if (data.status === "error") {
-        addSystem(`Error: ${data.error}`)
+        setSessionStatus("Could not continue iteration.", "error", 7000)
         return
     }
 
@@ -987,7 +1072,7 @@ async function submitCommand() {
         hideLoading()
 
         if (data.status === "error") {
-            addSystem(`Error: ${data.error}`)
+            setSessionStatus("Inject failed.", "error", 7000)
             return
         }
 
@@ -1014,7 +1099,7 @@ async function submitCommand() {
         hideLoading()
 
         if (data.status === "error") {
-            addSystem(`Error: ${data.error}`)
+            setSessionStatus("Redirect failed.", "error", 7000)
             return
         }
 
@@ -1041,7 +1126,7 @@ async function submitCommand() {
         hideLoading()
 
         if (data.status === "error") {
-            addSystem(`Error: ${data.error}`)
+            setSessionStatus("Finalize redirect failed.", "error", 7000)
             return
         }
 
@@ -1083,7 +1168,7 @@ function renderQueuePanel() {
 
     const html = handQueue
         .map((agent, idx) => {
-            const arrow = idx < handQueue.length - 1 ? `<div class="queue-arrow">↓</div>` : ""
+            const arrow = idx < handQueue.length - 1 ? `<div class="queue-arrow">&darr;</div>` : ""
             return `
             <div class="queue-item">
                 <span class="queue-pos">${idx + 1}</span>
@@ -1098,6 +1183,8 @@ function renderQueuePanel() {
 }
 
 loadModels()
+openSidebarSection(activeSidebarSection, false)
+setNewChatAvailability(true)
 commandInput.addEventListener("input", updateCommandSendState)
 redirectTurnsInput.addEventListener("input", updateCommandSendState)
 questionInput.addEventListener("input", () => {
