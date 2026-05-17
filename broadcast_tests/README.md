@@ -69,13 +69,13 @@ The following runs are the baseline documentation matrix and should be stored in
 
 ## Notes
 
-- Requires `GROQ_API_KEY` in `.env` (project root).
+- Requires `OPEN_ROUTER_API_KEY` for broadcast intent calls and `GROQ_API_KEY` when `--run-contribution` is used.
 - The harness is independent from `DPRSession`; no changes are made to main protocol logic.
 - Queue ordering is driven by self-reported priority, not facilitator score weights.
+- Intent calls use OpenRouter equivalents and contribution calls use the live Groq model IDs.
 - Tie-break ordering for raised hands:
   - Priority rank (high first)
   - Confidence (higher first)
   - Pointer novelty against recent turns (higher first)
   - JSON parse success and stable agent-name fallback
 - Some provider responses can be rate-limited (`429`) on contribution-heavy runs; the harness records those as `"[contribution_error] ..."` in artifact JSON instead of aborting.
-

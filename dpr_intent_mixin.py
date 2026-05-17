@@ -15,7 +15,7 @@ from dpr_constants import (
     STARVATION_THRESHOLD,
     STARTING_QUOTA,
 )
-from dpr_model_client import call_model
+from dpr_model_client import call_model, get_broadcast_model
 
 
 class DPRIntentMixin:
@@ -121,6 +121,12 @@ class DPRIntentMixin:
             "programming": {"api", "schema", "algorithm", "code", "module", "service", "pipeline", "database", "testing", "interface", "integration"},
             "education": {"student", "curriculum", "learning", "teaching", "pedagogy", "training", "assessment", "awareness"},
             "research": {"evidence", "experiment", "hypothesis", "metric", "analysis", "validation", "study", "benchmark"},
+            "product": {"user", "customer", "scope", "priority", "roadmap", "feature", "adoption", "feedback", "retention", "persona"},
+            "design": {"usability", "flow", "accessibility", "interaction", "layout", "interface", "journey", "visual", "prototype", "navigation"},
+            "business": {"market", "cost", "revenue", "pricing", "budget", "roi", "positioning", "sales", "growth", "business"},
+            "operations": {"process", "deployment", "handoff", "ownership", "timeline", "staffing", "monitoring", "workflow", "maintenance", "runbook"},
+            "security": {"security", "privacy", "threat", "risk", "abuse", "data", "auth", "permission", "compliance", "encryption"},
+            "ethics": {"fairness", "harm", "bias", "policy", "governance", "accountability", "consent", "transparency", "equity", "oversight"},
             "general": {"operations", "deployment", "policy", "governance", "budget", "timeline", "stakeholder", "risk"},
         }
         return mapping.get(section, mapping["general"])
@@ -144,6 +150,12 @@ class DPRIntentMixin:
             "programming": "Implementation architecture and API plan for: {seed}",
             "education": "Adoption, onboarding, and learning plan for: {seed}",
             "research": "Validation metrics and experiment design for: {seed}",
+            "product": "User value, scope, and prioritization plan for: {seed}",
+            "design": "User flow, accessibility, and interaction design plan for: {seed}",
+            "business": "Market, cost, and business viability plan for: {seed}",
+            "operations": "Deployment, ownership, and operating process plan for: {seed}",
+            "security": "Security, privacy, and abuse-prevention review for: {seed}",
+            "ethics": "Fairness, governance, and harm-reduction review for: {seed}",
             "general": "Operational plan and tradeoff resolution for: {seed}",
         }
         tpl = templates.get(section, templates["general"])
@@ -191,6 +203,7 @@ Return ONLY JSON and make pointer strictly section-aligned:
                 [{"role": "system", "content": "Return strict JSON only."}, {"role": "user", "content": prompt}],
                 max_tokens=260,
                 temperature=0.1,
+                provider="broadcast",
             )
         except Exception:
             return None
@@ -212,6 +225,17 @@ Return ONLY JSON and make pointer strictly section-aligned:
 
         intents = []
         raw_candidates = []
+        broadcast_event = {
+            "turn": self.turn,
+            "memory_snapshot": memory_block,
+            "recent_turns": recent,
+            "human_instruction": human_instruction,
+            "redirect": redirect,
+            "recent_pointer_themes": recent_pointer_themes,
+            "agent_intents": [],
+            "raw_candidates": [],
+            "queued_intents": [],
+        }
         for agent in self.agents:
             name = agent["name"]
             remaining_quota = self.quotas.get(name, 0)
@@ -262,6 +286,17 @@ Rules:
   strong confidence, concrete pointer, and clear unresolved impact.
 """
             raw = ""
+            agent_record = {
+                "agent": name,
+                "model": agent["model"],
+                "live_model": agent["model"],
+                "broadcast_model": get_broadcast_model(agent["model"]),
+                "section": section,
+                "remaining_quota": remaining_quota,
+                "attempts": [],
+                "accepted_for_queue": False,
+                "reject_reason": None,
+            }
             for _ in range(2):
                 try:
                     time.sleep(BROADCAST_CALL_DELAY_SECONDS)
@@ -270,25 +305,53 @@ Rules:
                         [{"role": "system", "content": "Return strict JSON only."}, {"role": "user", "content": prompt}],
                         max_tokens=260,
                         temperature=0.1,
+                        provider="broadcast",
                     )
-                except Exception:
+                    parsed_attempt = self._parse_intent_response(raw)
+                    agent_record["attempts"].append({
+                        "status": "ok",
+                        "raw": raw,
+                        "parsed": parsed_attempt,
+                    })
+                except Exception as e:
                     raw = ""
+                    parsed_attempt = self._parse_intent_response(raw)
+                    agent_record["attempts"].append({
+                        "status": "error",
+                        "error": str(e),
+                        "raw": raw,
+                        "parsed": parsed_attempt,
+                    })
                 intent = self._parse_intent_response(raw)
                 if intent["hand_raise"] or intent["pointer"]:
                     break
             intent = self._parse_intent_response(raw)
+            agent_record["parsed_intent"] = dict(intent)
             if intent.get("pointer"):
-                raw_candidates.append({"agent": name, "section": section, **intent})
+                raw_candidate = {
+                    "agent": name,
+                    "section": section,
+                    "model": agent["model"],
+                    "broadcast_model": get_broadcast_model(agent["model"]),
+                    **intent,
+                }
+                raw_candidates.append(raw_candidate)
+                broadcast_event["raw_candidates"].append(raw_candidate)
             if not (intent["hand_raise"] and intent["pointer"]):
+                agent_record["reject_reason"] = "no_hand_raise_or_pointer"
+                broadcast_event["agent_intents"].append(agent_record)
                 continue
 
             # section-fit validation and one retry if mismatch
             fit = self._section_fit_score(section, intent["pointer"])
+            agent_record["section_fit_score"] = fit
             if section != "general" and fit < 0.15:
                 retried = self._intent_retry_for_section_fit(agent, memory_block, recent_block, human_instruction, redirect)
                 if retried and retried.get("hand_raise") and retried.get("pointer"):
+                    agent_record["section_retry"] = dict(retried)
                     intent = retried
                     fit = self._section_fit_score(section, intent["pointer"])
+                    agent_record["section_fit_score"] = fit
             if section != "general" and fit < 0.15:
                 intent["priority_rank"] = max(2, intent["priority_rank"])
                 intent["priority_label"] = "medium"
@@ -320,9 +383,16 @@ Rules:
                     or (section != "general" and fit < 0.25)
                 )
                 if low_quota_reject:
+                    agent_record["reject_reason"] = "low_quota_quality_gate"
+                    agent_record["final_intent"] = dict(intent)
+                    broadcast_event["agent_intents"].append(agent_record)
                     continue
 
-            intents.append({"agent": name, "section": section, **intent})
+            queued_intent = {"agent": name, "section": section, **intent}
+            agent_record["accepted_for_queue"] = True
+            agent_record["final_intent"] = dict(queued_intent)
+            broadcast_event["agent_intents"].append(agent_record)
+            intents.append(queued_intent)
 
         # dedupe near-duplicate pointers: keep highest confidence among similar themes
         deduped = []
@@ -379,6 +449,14 @@ Rules:
         self.intent_queue = deque(deduped)
         self.hand_queue = deque([x["agent"] for x in deduped])
         self.last_selection_reason = f"Broadcast produced {len(deduped)} raised hands."
+        broadcast_event["valid_intents"] = list(intents)
+        broadcast_event["queued_intents"] = list(deduped)
+        self.broadcast_events.append(broadcast_event)
+        if hasattr(self, "record_event"):
+            self.record_event("broadcast", {
+                "raised_count": len(deduped),
+                "queued_agents": [x["agent"] for x in deduped],
+            })
         self.pending_human_instruction = None
 
     # --------------------------------------------

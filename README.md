@@ -1,48 +1,32 @@
-# Distributed Protocol for Reasoning (DPR)
+# Distributed Protocol for Reasoning (DPR) - Phase 4
 
-A production-style research prototype for orchestrating multi-agent reasoning with structured facilitator controls, human governance, and memory-aware turn selection.
+This branch is the **Phase-4 implementation** of DPR.
 
-This `main` branch is merged with the `Phase-3` branch.
+It builds on Phase-3 and adds:
 
----
-
-## Overview
-
-The system runs a guided reasoning session where multiple LLM agents collaborate on a shared problem under a protocol that balances:
-
-- contribution quality
-- fairness in participation
-- anti-loop safeguards
-- human oversight at critical decision points
-
-Core capabilities include dynamic model panel selection, broadcast-based hand-raise intent collection, starvation-aware fallback selection, structured shared memory updates, and human finalization approval flow.
+- provider-aware model routing across Groq and OpenRouter
+- OpenRouter-backed broadcast and selector flows to reduce Groq pressure
+- expanded section-aware agent paneling
+- saved chat history with restore and redirect-based continuation
+- stricter LLM selector parsing with heuristic fallback
+- cleaner chat transcripts that hide ignored/API-error turns
+- stronger finalization gates before `FINAL DESIGN COMPLETE`
+- updated broadcast test harness behavior for provider-split calls
 
 ---
 
-## System Architecture
+## Architecture
 
-### Backend Modules
+### Backend
 
-- `app.py`  
-  Flask API surface for session lifecycle, intervention commands, and finalization routes.
-
-- `dpr_protocol.py`  
-  `DPRSession` orchestrator for session state, step execution, human turn control, and completion handling.
-
-- `dpr_intent_mixin.py`  
-  Intent parsing, broadcast prompting, queue construction, starvation fallback, and next-speaker arbitration.
-
-- `dpr_memory_mixin.py`  
-  Shared memory extraction/cleanup, delta merging, context synthesis, and state payload generation.
-
-- `dpr_selector.py`  
-  Question-aware model/section recommendation using LLM routing with heuristic fallback.
-
-- `dpr_model_client.py`  
-  Groq chat-completions API client wrapper.
-
-- `dpr_constants.py`  
-  Runtime limits, model catalog, section metadata, memory tuning, and scoring thresholds.
+- `app.py` - Flask API routes, session lifecycle, history routes, and finalization routes
+- `dpr_protocol.py` - `DPRSession` orchestrator, turn execution, human controls, completion gates
+- `dpr_memory_mixin.py` - shared memory extraction, merge, context building, and completion-gate prompting
+- `dpr_intent_mixin.py` - broadcast intent collection, section-fit validation, queue construction, speaker selection
+- `dpr_selector.py` - question-based model/section panel suggestion using OpenRouter LLM routing plus fallback parsing
+- `dpr_model_client.py` - provider-aware chat-completions caller for Groq, OpenRouter, and broadcast routing
+- `dpr_constants.py` - model catalogs, provider URLs, section metadata, routing maps, runtime thresholds
+- `dpr_history.py` - saved chat persistence and continuation support
 
 ### Frontend
 
@@ -50,146 +34,194 @@ Core capabilities include dynamic model panel selection, broadcast-based hand-ra
 - `static/app.js`
 - `static/style.css`
 
-The UI supports live session control, human intervention actions, and per-turn protocol metadata display.
+The UI supports live protocol control, model-section selection, selector-source visibility, human interventions, history restore, and per-turn metadata display.
 
 ---
 
-## Protocol Features
+## Phase-4 Protocol Capabilities
 
-### 1. Dynamic Agent Paneling
+- Dynamic agent panel at session start with `{ model, section }` entries
+- Expanded section catalog:
+  - `general`
+  - `education`
+  - `programming`
+  - `research`
+  - `product`
+  - `design`
+  - `business`
+  - `operations`
+  - `security`
+  - `ethics`
+- Model catalog and default panel exposure via `/models`
+- OpenRouter-backed model panel recommendation via `/suggest_models`
+- LLM-selected model-section pairs are respected exactly after validation and dedupe
+  - same model ID may appear in multiple sections when the selector returns those pairs
+  - exact duplicate model-section pairs are removed
+  - if the LLM returns unusable output, heuristic fallback is used
+- More resilient selector parsing:
+  - JSON object
+  - fenced JSON
+  - prose-wrapped JSON
+  - Python-style dicts
+  - trailing-comma repair
+  - raw-output preview in the UI for non-LLM fallback paths
+- Queue-based next-speaker arbitration:
+  - consume queued intents first
+  - starvation fallback for long-waiting agents
+  - broadcast if queue is empty
+  - bootstrap fallback when required
+- OpenRouter broadcast intent collection:
+  - live Groq model IDs are mapped to OpenRouter broadcast equivalents
+  - broadcast records include live model and broadcast model metadata
+  - contribution/live turns still use Groq model IDs
+- Section-aware broadcast behavior:
+  - prompts include section-specific role headers
+  - section-fit retry path for misaligned pointers
+  - synthetic fallback pointers remain section-aligned
+- Shared memory state:
+  - `facts`
+  - `options`
+  - `decisions`
+  - `open_questions`
+  - `actions`
+  - `changelog`
+- Memory summarization uses Groq `openai/gpt-oss-safeguard-20b`
+- Facilitator safeguards:
+  - loop filtering
+  - fairness repeat protection
+  - redirect handling across turns
+  - provider/API errors are logged internally instead of printed into the chat transcript
+- Completion governance:
+  - models are instructed not to emit `FINAL DESIGN COMPLETE` early
+  - backend strips or defers premature completion markers
+  - completion requires broad shared context, enough accepted turns, addressed pointers, agent coverage, no active pointer, and no pending broadcast pointers
+- Human governance:
+  - raise hand for direct human turn
+  - submit human reasoning turn
+  - submit human action turn (`inject` / `redirect`)
+  - approve or continue after finalization candidate
+  - continue restored history through redirect
+- Saved chat history:
+  - ended sessions can be saved from the UI before starting a new chat
+  - saved chats are listed with title, saved time, agent count, and turn count
+  - loading a saved chat restores transcript, agents, memory, facilitator logs, broadcast events, and runtime state
+  - restored chats pause until the human supplies a redirect objective, preventing silent continuation from stale context
+- Rich state metadata in responses:
+  - `selection_reason`
+  - queued interrupts
+  - intent metadata (`intent_priority`, `intent_pointer`, `intent_confidence`, etc.)
+  - memory snapshot
+  - completion readiness details
 
-- Supports user-provided model panel selection at session start.
-- Validates model compatibility against `AVAILABLE_MODELS`.
-- Supports section assignment per agent (`general`, `programming`, `education`, `research`).
+---
 
-### 2. Broadcast-Driven Turn Arbitration
+## Saved Chat History
 
-- When queue is empty, all eligible agents receive a broadcast intent prompt.
-- Agents return structured JSON with:
-  - hand raise decision
-  - priority
-  - pointer (next concrete contribution)
-  - confidence
-- Intents are filtered for section fit, pointer quality, novelty, and relevance.
-- Low-quota agents are gated to higher-value raises only.
-- Broadcast processing also applies:
-  - one retry path for section misalignment
-  - deduplication of near-identical pointer themes
-  - fallback queue recovery from raw candidates when too few valid raises exist
-  - synthetic section-aligned fallback pointers to maintain protocol momentum
-- Final queue ordering is normalized by priority rank, confidence, and deterministic agent tie-breaking.
+Phase-4 adds first-class local history persistence.
 
-### 3. Queue + Starvation Fallback Logic
+Saved session documents are written as JSON files under:
 
-Speaker selection uses a layered strategy:
+```text
+session_history/
+```
 
-1. Consume existing `intent_queue`
-2. Apply starvation fallback for long-waiting agents
-3. Broadcast for fresh intents
-4. Retry starvation fallback
-5. Bootstrap/random fallback (eligible agent)
+Each saved document includes:
 
-Starvation-selected turns intentionally use empty pointers so non-broadcast selections do not inherit synthetic pointer intent.
+- original question
+- agent model-section panel
+- accepted and ignored responses
+- facilitator log
+- shared memory
+- broadcast events
+- history events
+- runtime state needed for continuation
 
-### 4. Shared Memory Model
+History workflow:
 
-The protocol maintains structured memory:
+1. Finish or stop a session.
+2. Use **New Chat** to save the ended session into history.
+3. Open the history drawer and select a saved chat.
+4. Review the restored transcript and memory.
+5. Continue only by entering a redirect objective.
 
-- `facts`
-- `options`
-- `decisions`
-- `open_questions`
-- `actions`
-- `changelog`
+The redirect requirement is intentional: a loaded chat may contain old assumptions, stale unresolved pointers, or a previous completion boundary, so Phase-4 asks the human to explicitly steer continuation before agents resume.
 
-Memory is updated each accepted turn using a summarizer model plus robust fallback heuristics when parsing fails.
+History endpoints:
 
-### 5. Facilitator Safeguards
+- `GET /history` - list saved chat summaries
+- `POST /history/save_current` - save the current ended session
+- `GET /history/<history_id>` - fetch a saved document
+- `POST /history/<history_id>/load` - restore a saved chat into the active session
+- `POST /history/continue` - continue a restored chat with a redirect
 
-- Loop detection over recent accepted responses
-- Fairness repeat-streak suppression
-- Redirect objective injection with bounded duration
-- Logged facilitator events for traceability
+---
 
-### 6. Human Governance Controls
+## Provider Routing
 
-- Raise human hand and enter protocol queue
-- Submit direct human reasoning turn
-- Submit human action turn (`inject` / `redirect`)
-- Stop session
-- Finalization gate:
-  - approve completion candidate
-  - continue after candidate (optionally with redirect)
+Phase-4 separates where each kind of model call goes:
 
-### 7. Rich State and Observability
+- Live agent answers: Groq
+- Memory summaries: Groq
+- Broadcast hand-raise intent calls: OpenRouter
+- Model/section selector: `SELECTOR_MODEL` through `SELECTOR_PROVIDER`
 
-Step payloads expose protocol internals for UI/debugging, including:
+Current constants:
 
-- `selection_reason`
-- `hand_raise_scores`
-- queued interrupts
-- intent metadata
-- memory snapshot
+```python
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPEN_ROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+MEMORY_MODEL = "openai/gpt-oss-safeguard-20b"
+SELECTOR_MODEL = "openrouter/free"
+SELECTOR_PROVIDER = "openrouter"
+```
+
+Broadcast mapping:
+
+```text
+llama-3.1-8b-instant    -> nvidia/nemotron-nano-9b-v2:free
+llama-3.3-70b-versatile -> nvidia/nemotron-nano-12b-v2-vl:free
+openai/gpt-oss-20b      -> openai/gpt-oss-20b:free
+openai/gpt-oss-120b     -> openai/gpt-oss-120b:free
+```
+
+The selector sends the exact configured `SELECTOR_MODEL` string to OpenRouter. If that provider rejects the slug, update `SELECTOR_MODEL` in `dpr_constants.py`.
 
 ---
 
 ## API Endpoints
 
-### Session Lifecycle
-
-- `GET /` - UI entrypoint
-- `POST /start` - start session (`question`, optional `models`)
+- `GET /` - UI
+- `POST /start` - start session:
+  - body: `{ "question": "...", "models": [...] }`
+- `GET /models` - available models, default models, sections
+- `POST /suggest_models` - suggest model-section panel for a question
 - `POST /step` - execute one protocol step
 - `POST /pause` - pause session
 - `POST /resume` - resume session
 - `POST /set_models` - update active panel while paused
-- `POST /stop` - terminate session
-
-### Model Selection
-
-- `GET /models` - available/default models and supported sections
-- `POST /suggest_models` - model panel recommendation for a question
-
-### Human Intervention
-
-- `POST /inject` - inject facilitator instruction
-- `POST /raise_hand` - enqueue human turn request
-- `POST /human_turn` - submit human turn/action
-- `POST /redirect` - apply redirect objective for N turns
-
-### Finalization
-
-- `POST /finalize/approve` - accept completion candidate
-- `POST /finalize/continue` - continue reasoning after candidate
+- `POST /stop` - stop session
+- `POST /inject` - inject human instruction
+- `POST /raise_hand` - enqueue human hand raise
+- `POST /human_turn` - submit human turn / human action
+- `POST /redirect` - set redirect objective and duration
+- `POST /finalize/approve` - approve completion candidate
+- `POST /finalize/continue` - continue after completion candidate
+- `GET /history` - list saved chats
+- `POST /history/save_current` - save ended session
+- `GET /history/<history_id>` - fetch saved chat document
+- `POST /history/<history_id>/load` - load saved chat into session
+- `POST /history/continue` - continue loaded chat with redirect
 
 ---
 
-## Configuration
+## Setup
 
-Environment variable:
-
-- `GROQ_API_KEY` - required for model API calls
-
-Setup:
-
-1. Copy `.env.example` to `.env`
-2. Set:
-
-```env
-GROQ_API_KEY=gsk_your_actual_key_here
-```
-
----
-
-## Installation and Run
-
-1. Create virtual environment:
+### 1) Create and activate virtual environment
 
 ```bash
 python -m venv venv
 ```
-
-2. Activate environment:
 
 Windows:
 
@@ -203,84 +235,106 @@ macOS/Linux:
 source venv/bin/activate
 ```
 
-3. Install dependencies:
+### 2) Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Start server:
+`requirements.txt` includes:
+
+- `flask`
+- `requests`
+- `python-dotenv`
+
+### 3) Configure API keys
+
+1. Copy `.env.example` to `.env`
+2. Set:
+
+```env
+GROQ_API_KEY=gsk_your_actual_key_here
+OPEN_ROUTER_API_KEY=sk-or-v1-your_actual_key_here
+```
+
+### 4) Run
 
 ```bash
 python app.py
 ```
 
-5. Open:
-
-`http://127.0.0.1:5000`
+Open: `http://127.0.0.1:5000`
 
 ---
 
-## Default Model Configuration
+## Default Models (Phase-4)
 
-Default panel (`DEFAULT_AGENT_MODELS`):
+Live Groq default panel:
 
 - `llama-3.3-70b-versatile`
 - `openai/gpt-oss-120b`
 - `openai/gpt-oss-20b`
 
-Current available catalog (`AVAILABLE_MODELS`) also includes:
+Available live Groq catalog additionally includes:
 
 - `llama-3.1-8b-instant`
-- `groq/compound-mini`
-- `openai/gpt-oss-safeguard-20b`
+
+OpenRouter catalog used by Phase-4:
+
+- `openai/gpt-oss-120b:free`
+- `openai/gpt-oss-20b:free`
+- `nvidia/nemotron-nano-12b-v2-vl:free`
+- `nvidia/nemotron-nano-9b-v2:free`
 
 ---
 
-## Broadcast Test Artifacts
+## Broadcast Test Harness
 
-Broadcast validation assets are included under:
+Broadcast validation assets are under:
 
-- `broadcast_tests/broadcast_handraise_test.py` - broadcast/hand-raise test harness
-- `broadcast_tests/artifacts/` - saved JSON outputs for analysis and reproducibility
+- `broadcast_tests/broadcast_handraise_test.py`
+- `broadcast_tests/artifacts/`
 
-Current JSON artifacts include:
+Run from project root:
 
-- `broadcast_debug.json`
-- `default_no_contribution.json`
-- `default_with_contribution.json`
-- `default_with_contribution_compact.json`
-- `all_models_no_contribution.json`
-- `all_models_with_contribution.json`
-- `all_models_with_contribution_compact.json`
+```bash
+python broadcast_tests/broadcast_handraise_test.py --question "Design a campus waste-sorting system"
+```
 
-These files capture model intent outputs, parsing behavior, and contribution/no-contribution scenarios used to inspect broadcast decision quality.
+With contribution phase:
 
-For execution flow, artifact format, and usage notes, see [broadcast_tests README](broadcast_tests/README.md).
+```bash
+python broadcast_tests/broadcast_handraise_test.py --question "Design a campus waste-sorting system" --run-contribution
+```
+
+Phase-4 behavior:
+
+- broadcast intent calls use OpenRouter equivalents
+- contribution calls use live Groq model IDs
+- `OPEN_ROUTER_API_KEY` is required for intent-only runs
+- `GROQ_API_KEY` is also required when `--run-contribution` is used
+
+For artifact matrix and usage notes, see [broadcast_tests README](broadcast_tests/README.md).
 
 ---
 
-## Branch Feature Snapshot
+## Phase-4 Change Summary
 
-- `Phase-0`
-  - Two-agent plus judge iterative loop with consensus-style continuation.
-  - Basic round UI with verdict-driven context carry-forward.
-
-- `Phase-1`
-  - Four-agent protocol with quotas, hand queue, loop/fairness checks.
-  - Human `inject` and `redirect` controls added to runtime flow.
-
-- `Phase-2`
-  - Dynamic model panel APIs and model suggestion endpoint introduced.
-  - Shared structured memory and richer governance/finalization flow expanded.
-
-- `Phase-3`
-  - Protocol modularized into orchestrator + intent/memory mixins.
-  - Broadcast-intent arbitration, starvation fallback, and detailed observability stabilized.
+- Split old single Groq API URL into Groq and OpenRouter endpoints.
+- Introduced provider-aware `call_model(...)` routing.
+- Kept UI/session model IDs as Groq live model IDs.
+- Routed broadcast hand-raise prompts through OpenRouter mappings.
+- Routed selector calls through `SELECTOR_PROVIDER`.
+- Added expanded section headers for broader agent specialization.
+- Hardened selector parsing while preserving the selector model's exact returned panel.
+- Hid ignored turns and provider errors from the visible chat transcript.
+- Added stricter completion readiness checks before finalization.
+- Added local saved-chat history with restore and redirect-gated continuation.
+- Updated broadcast test harness docs for OpenRouter intent calls.
 
 ---
 
 ## Notes
 
-- Runs on Flask development server (`debug=True`) by default.
-- Keep `.env` private; never commit real API keys.
+- This runs with Flask dev server (`debug=True`).
+- Keep `.env` private and never commit real API keys.

@@ -14,6 +14,10 @@ from dpr_constants import (
     MEMORY_MODEL,
     MEMORY_SECTION_LIMIT,
     MEMORY_SIMILARITY_THRESHOLD,
+    MIN_COMPLETION_ACCEPTED_TURNS,
+    MIN_COMPLETION_AGENT_COVERAGE_RATIO,
+    MIN_COMPLETION_MEMORY_ITEMS,
+    MIN_COMPLETION_POINTERS_ADDRESSED,
     MIN_PERSISTENT_OPEN_QUESTIONS,
     RECENT_TURNS_IN_CONTEXT,
     SECTION_HEADERS,
@@ -520,6 +524,23 @@ Agent pointer (focus this turn):
 You MUST focus your response on this pointer and advance it concretely.
 """
 
+        completion_block = f"""
+Completion gate:
+- Do NOT write FINAL DESIGN COMPLETE while this turn has an active pointer, while the broadcast queue has pending pointers, or while you can identify any meaningful gap to add.
+- Only write FINAL DESIGN COMPLETE when the shared context is broad and settled: at least {MIN_COMPLETION_ACCEPTED_TURNS} accepted agent turns, at least {MIN_COMPLETION_MEMORY_ITEMS} shared memory items, at least {MIN_COMPLETION_POINTERS_ADDRESSED} addressed pointers, and at least {MIN_COMPLETION_AGENT_COVERAGE_RATIO:.0%} agent coverage.
+- If any condition is not clearly satisfied, keep contributing without using the final-completion phrase.
+"""
+        if hasattr(self, "_completion_readiness"):
+            readiness = self._completion_readiness(current_pointer=pointer_text or "")
+            if readiness.get("ready"):
+                completion_block += "\nCurrent completion gate status: eligible if no new gap remains.\n"
+            else:
+                completion_block += (
+                    "\nCurrent completion gate status: not eligible yet. Missing: "
+                    + "; ".join(readiness.get("blockers", []))
+                    + "\n"
+                )
+
         context = f"""
 You are {agent_name} in a distributed reasoning protocol.
 {section_header}
@@ -536,6 +557,7 @@ Recent accepted turns:
 {human_block}
 {redirect_block}
 {pointer_block}
+{completion_block}
 
 Instructions:
 - Continue the design logically.
@@ -545,7 +567,7 @@ Instructions:
   "Facts / Assumptions", "Options / Proposals", "Decisions", "Open Questions", or "Action Items"
   in your reply format.
 - Reply in plain engineering prose or a compact numbered plan focused only on new contributions.
-- If the design is complete write: FINAL DESIGN COMPLETE
+- Use FINAL DESIGN COMPLETE only when the completion gate says eligible and your own analysis finds no useful remaining pointer.
 """
 
         self.last_context_snapshot = context.strip()

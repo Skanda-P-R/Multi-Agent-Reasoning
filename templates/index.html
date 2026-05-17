@@ -8,108 +8,133 @@
 </head>
 
 <body>
-    <button class="models-toggle" onclick="toggleModelsDrawer()">Models</button>
-    <button class="memory-toggle" onclick="toggleMemoryDrawer()">Memory</button>
-    <button class="queue-toggle" onclick="toggleQueueDrawer()">Hand Queue</button>
-
-    <aside id="models-drawer" class="models-drawer">
-        <div class="memory-header">
-            <h2>Agent Models</h2>
-            <div class="drawer-actions">
-                <button class="btn btn-muted" onclick="applyModelSelection()">Select Models</button>
-                <button class="btn btn-muted" onclick="closeModelsDrawer()">Close</button>
+    <div class="layout">
+        <aside id="left-sidebar" class="left-sidebar">
+            <div class="sidebar-top">
+                <button id="sidebar-toggle" class="icon-btn" onclick="toggleSidebar()" title="Toggle sidebar">&#9776;</button>
+                <button id="new-chat-btn" class="sidebar-brand-btn" onclick="startNewChat()" title="Start a new chat">Click to start a New Chat</button>
             </div>
-        </div>
-        <div class="memory-content">
-            <p id="model-count" class="models-meta">Select at least 2 models.</p>
-            <div class="models-actions">
-                <label class="select-all-row">
-                    <input id="select-all-models" type="checkbox" onchange="toggleSelectAll(this.checked)">
-                    <span>Select All Models</span>
-                </label>
+            <div class="sidebar-nav">
+                <button id="nav-models" class="icon-btn sidebar-nav-btn active" onclick="openSidebarSection('models')" title="Model Selection">
+                    <span class="nav-icon">M</span><span class="nav-label">Model Selection</span>
+                </button>
+                <button id="nav-context" class="icon-btn sidebar-nav-btn" onclick="openSidebarSection('context')" title="Shared Context">
+                    <span class="nav-icon">C</span><span class="nav-label">Shared Context</span>
+                </button>
+                <button id="nav-queue" class="icon-btn sidebar-nav-btn" onclick="openSidebarSection('queue')" title="Hand Queue">
+                    <span class="nav-icon">Q</span><span class="nav-label">Hand Queue</span>
+                </button>
             </div>
-            <div id="models-list" class="models-list"></div>
-        </div>
-    </aside>
 
-    <aside id="memory-drawer" class="memory-drawer">
-        <div class="memory-header">
-            <h2>Shared Memory</h2>
-            <button class="btn btn-muted" onclick="toggleMemoryDrawer()">Close</button>
-        </div>
-        <div class="memory-content">
-            <div id="memory-view"></div>
-            <h3>Context Preview</h3>
-            <pre id="context-view" class="context-view">(no context yet)</pre>
-        </div>
-    </aside>
+            <div class="sidebar-content">
+                <section id="models-drawer" class="sidebar-panel active" data-section="models">
+                    <div class="sidebar-panel-actions">
+                        <button id="model-apply-btn" class="btn btn-muted sidebar-apply-btn" onclick="applyModelSelection()">Apply</button>
+                    </div>
+                    <div class="memory-content">
+                        <p id="model-count" class="models-meta">Select at least 2 models.</p>
+                        <div class="models-actions">
+                            <label class="select-all-row">
+                                <input id="select-all-models" type="checkbox" onchange="toggleSelectAll(this.checked)">
+                                <span>Select All Models</span>
+                            </label>
+                        </div>
+                        <div id="models-list" class="models-list"></div>
+                    </div>
+                </section>
 
-    <aside id="queue-drawer" class="queue-drawer-panel">
-        <div class="memory-header">
-            <h2>Hand Queue</h2>
-            <button class="btn btn-muted" onclick="toggleQueueDrawer()">Close</button>
-        </div>
-        <div class="memory-content">
-            <p id="queue-meta" class="models-meta">Queue updates each protocol turn.</p>
-            <div id="queue-track" class="queue-track"></div>
-        </div>
-    </aside>
+                <section id="memory-drawer" class="sidebar-panel" data-section="context">
+                    <div class="memory-content">
+                        <div id="memory-view"></div>
+                        <h3>Context Preview</h3>
+                        <pre id="context-view" class="context-view">(no context yet)</pre>
+                    </div>
+                </section>
 
-    <div class="app">
-        <header class="header">
-            <div>
-                <h1>DPR Console</h1>
-                <p>Distributed Protocol for Reasoning</p>
+                <section id="queue-drawer" class="sidebar-panel" data-section="queue">
+                    <div class="memory-content">
+                        <p id="queue-meta" class="models-meta">Queue updates each protocol turn.</p>
+                        <div id="queue-track" class="queue-track"></div>
+                    </div>
+                </section>
+
+                <section id="history-drawer" class="sidebar-panel" data-section="history">
+                    <div class="sidebar-panel-actions">
+                        <button class="btn btn-muted sidebar-apply-btn" onclick="loadHistoryList()">Refresh Saved Chats</button>
+                    </div>
+                    <div class="memory-content">
+                        <p id="history-meta" class="models-meta">Saved chats appear after New Chat is clicked at the end of a session.</p>
+                        <div id="history-list" class="history-list"></div>
+                    </div>
+                </section>
             </div>
-            <span class="header-badge">Live Session</span>
-        </header>
 
-        <div id="loading-indicator" class="loading-indicator hidden" aria-live="polite">
-            <span class="loading-spinner"></span>
-            <span id="loading-text">Working...</span>
-        </div>
-
-        <div id="chat" class="chat"></div>
-
-        <div id="suggestion-box" class="suggestion-box hidden">
-            <div class="suggestion-title">Suggested Agent Selection</div>
-            <div id="suggestion-text" class="suggestion-text"></div>
-            <div class="suggestion-actions">
-                <button class="btn btn-muted" onclick="approveSuggestedModels()">Approve Suggested</button>
-                <button class="btn btn-muted" onclick="useManualSelection()">Edit Manually</button>
+            <div class="sidebar-bottom">
+                <button id="nav-history" class="icon-btn sidebar-nav-btn sidebar-history-btn" onclick="openSidebarSection('history')" title="View Previous Chats">
+                    <span class="nav-icon">H</span><span class="nav-label">View Previous Chats</span>
+                </button>
             </div>
-        </div>
+        </aside>
 
-        <div class="control-panel">
-            <button class="btn btn-muted" onclick="pause()">Pause</button>
-            <button class="btn btn-muted" onclick="resume()">Resume</button>
-            <button class="btn btn-muted" onclick="stopReasoning()">Stop Reasoning</button>
-            <button class="btn btn-muted" onclick="raiseHand()">Raise Hand</button>
-        </div>
+        <div class="app">
+            <header class="header">
+                <div>
+                    <h1>DPR Console</h1>
+                    <p>Distributed Protocol for Reasoning</p>
+                </div>
+                <div class="header-badges">
+                    <span id="session-status-badge" class="header-badge header-status-badge hidden">Idle</span>
+                    <span class="header-badge">Live Session</span>
+                </div>
+            </header>
 
-        <div id="human-turn-options" class="control-panel hidden">
-            <span class="command-label">HUMAN TURN ACTION</span>
-            <button class="btn btn-muted" onclick="showHumanTurnInject()">Use Inject</button>
-            <button class="btn btn-muted" onclick="showHumanTurnRedirect()">Use Redirect</button>
-        </div>
+            <div id="loading-indicator" class="loading-indicator hidden" aria-live="polite">
+                <span class="loading-spinner"></span>
+                <span id="loading-text">Working...</span>
+            </div>
 
-        <div id="finalization-options" class="control-panel hidden">
-            <span class="command-label">COMPLETION CONTROL</span>
-            <button class="btn btn-muted" onclick="approveStop()">Approve Stop</button>
-            <button class="btn btn-muted" onclick="continueIteration()">Continue Iteration</button>
-            <button class="btn btn-muted" onclick="showFinalizeRedirect()">Redirect & Continue</button>
-        </div>
+            <div id="chat" class="chat"></div>
 
-        <div id="command-box" class="command-box hidden">
-            <span id="command-label" class="command-label"></span>
-            <input id="command-input" placeholder="Enter command message...">
-            <input id="redirect-turns" type="number" min="1" value="3" class="hidden" title="Redirect turns">
-            <button id="command-send-btn" class="btn" onclick="submitCommand()" disabled>Send</button>
-        </div>
+            <div id="suggestion-box" class="suggestion-box hidden">
+                <div class="suggestion-title">Suggested Agent Selection</div>
+                <div id="suggestion-text" class="suggestion-text"></div>
+                <div class="suggestion-actions">
+                    <button class="btn btn-muted" onclick="approveSuggestedModels()">Approve Suggested</button>
+                    <button class="btn btn-muted" onclick="useManualSelection()">Edit Manually</button>
+                </div>
+            </div>
 
-        <div class="input-bar">
-            <textarea id="question" placeholder="Ask something..."></textarea>
-            <button id="start-btn" class="btn" onclick="start()" disabled>Start</button>
+            <div class="control-panel">
+                <button class="btn btn-muted" onclick="pause()">Pause</button>
+                <button class="btn btn-muted" onclick="resume()">Resume</button>
+                <button class="btn btn-muted" onclick="stopReasoning()">Stop Reasoning</button>
+                <button class="btn btn-muted" onclick="raiseHand()">Raise Hand</button>
+            </div>
+
+            <div id="human-turn-options" class="control-panel hidden">
+                <span class="command-label">HUMAN TURN ACTION</span>
+                <button class="btn btn-muted" onclick="showHumanTurnInject()">Use Inject</button>
+                <button class="btn btn-muted" onclick="showHumanTurnRedirect()">Use Redirect</button>
+            </div>
+
+            <div id="finalization-options" class="control-panel hidden">
+                <span class="command-label">COMPLETION CONTROL</span>
+                <button class="btn btn-muted" onclick="approveStop()">Approve Stop</button>
+                <button class="btn btn-muted" onclick="continueIteration()">Continue Iteration</button>
+                <button class="btn btn-muted" onclick="showFinalizeRedirect()">Redirect & Continue</button>
+            </div>
+
+            <div id="command-box" class="command-box hidden">
+                <span id="command-label" class="command-label"></span>
+                <input id="command-input" placeholder="Enter command message...">
+                <input id="redirect-turns" type="number" min="1" value="3" class="hidden" title="Redirect turns">
+                <button id="command-send-btn" class="btn" onclick="submitCommand()" disabled>Send</button>
+            </div>
+
+            <div class="input-bar">
+                <textarea id="question" placeholder="Ask something..."></textarea>
+                <button id="start-btn" class="btn" onclick="start()" disabled>Start</button>
+            </div>
         </div>
     </div>
 
