@@ -15,7 +15,7 @@ from dpr_constants import (
     STARVATION_THRESHOLD,
     STARTING_QUOTA,
 )
-from dpr_model_client import call_model
+from dpr_model_client import call_model, get_broadcast_model
 
 
 class DPRIntentMixin:
@@ -121,6 +121,12 @@ class DPRIntentMixin:
             "programming": {"api", "schema", "algorithm", "code", "module", "service", "pipeline", "database", "testing", "interface", "integration"},
             "education": {"student", "curriculum", "learning", "teaching", "pedagogy", "training", "assessment", "awareness"},
             "research": {"evidence", "experiment", "hypothesis", "metric", "analysis", "validation", "study", "benchmark"},
+            "product": {"user", "customer", "scope", "priority", "roadmap", "feature", "adoption", "feedback", "retention", "persona"},
+            "design": {"usability", "flow", "accessibility", "interaction", "layout", "interface", "journey", "visual", "prototype", "navigation"},
+            "business": {"market", "cost", "revenue", "pricing", "budget", "roi", "positioning", "sales", "growth", "business"},
+            "operations": {"process", "deployment", "handoff", "ownership", "timeline", "staffing", "monitoring", "workflow", "maintenance", "runbook"},
+            "security": {"security", "privacy", "threat", "risk", "abuse", "data", "auth", "permission", "compliance", "encryption"},
+            "ethics": {"fairness", "harm", "bias", "policy", "governance", "accountability", "consent", "transparency", "equity", "oversight"},
             "general": {"operations", "deployment", "policy", "governance", "budget", "timeline", "stakeholder", "risk"},
         }
         return mapping.get(section, mapping["general"])
@@ -144,6 +150,12 @@ class DPRIntentMixin:
             "programming": "Implementation architecture and API plan for: {seed}",
             "education": "Adoption, onboarding, and learning plan for: {seed}",
             "research": "Validation metrics and experiment design for: {seed}",
+            "product": "User value, scope, and prioritization plan for: {seed}",
+            "design": "User flow, accessibility, and interaction design plan for: {seed}",
+            "business": "Market, cost, and business viability plan for: {seed}",
+            "operations": "Deployment, ownership, and operating process plan for: {seed}",
+            "security": "Security, privacy, and abuse-prevention review for: {seed}",
+            "ethics": "Fairness, governance, and harm-reduction review for: {seed}",
             "general": "Operational plan and tradeoff resolution for: {seed}",
         }
         tpl = templates.get(section, templates["general"])
@@ -191,6 +203,7 @@ Return ONLY JSON and make pointer strictly section-aligned:
                 [{"role": "system", "content": "Return strict JSON only."}, {"role": "user", "content": prompt}],
                 max_tokens=260,
                 temperature=0.1,
+                provider="broadcast",
             )
         except Exception:
             return None
@@ -276,6 +289,8 @@ Rules:
             agent_record = {
                 "agent": name,
                 "model": agent["model"],
+                "live_model": agent["model"],
+                "broadcast_model": get_broadcast_model(agent["model"]),
                 "section": section,
                 "remaining_quota": remaining_quota,
                 "attempts": [],
@@ -290,6 +305,7 @@ Rules:
                         [{"role": "system", "content": "Return strict JSON only."}, {"role": "user", "content": prompt}],
                         max_tokens=260,
                         temperature=0.1,
+                        provider="broadcast",
                     )
                     parsed_attempt = self._parse_intent_response(raw)
                     agent_record["attempts"].append({
@@ -312,8 +328,15 @@ Rules:
             intent = self._parse_intent_response(raw)
             agent_record["parsed_intent"] = dict(intent)
             if intent.get("pointer"):
-                raw_candidates.append({"agent": name, "section": section, **intent})
-                broadcast_event["raw_candidates"].append({"agent": name, "section": section, **intent})
+                raw_candidate = {
+                    "agent": name,
+                    "section": section,
+                    "model": agent["model"],
+                    "broadcast_model": get_broadcast_model(agent["model"]),
+                    **intent,
+                }
+                raw_candidates.append(raw_candidate)
+                broadcast_event["raw_candidates"].append(raw_candidate)
             if not (intent["hand_raise"] and intent["pointer"]):
                 agent_record["reject_reason"] = "no_hand_raise_or_pointer"
                 broadcast_event["agent_intents"].append(agent_record)

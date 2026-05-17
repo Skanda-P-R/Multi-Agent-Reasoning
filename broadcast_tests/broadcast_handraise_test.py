@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dpr_constants import DEFAULT_AGENT_MODELS, DEFAULT_SECTION  # noqa: E402
-from dpr_model_client import call_model  # noqa: E402
+from dpr_model_client import call_model, get_broadcast_model  # noqa: E402
 
 
 # --------------------------------------------
@@ -310,7 +310,13 @@ def run_broadcast_cycle(
         for attempt_idx in range(max_attempts):
             t0 = time.time()
             try:
-                candidate = call_model(agent["model"], messages, max_tokens=320, temperature=0.1)
+                candidate = call_model(
+                    agent["model"],
+                    messages,
+                    max_tokens=320,
+                    temperature=0.1,
+                    provider="broadcast",
+                )
                 elapsed = round(time.time() - t0, 2)
                 candidate = (candidate or "").strip()
                 attempts.append({
@@ -338,6 +344,7 @@ def run_broadcast_cycle(
         extracted = parse_intent(raw)
         intents.append({
             "agent": agent,
+            "broadcast_model": get_broadcast_model(agent["model"]),
             "raw": raw,
             "extracted": extracted,
             "attempts": attempts,
@@ -347,9 +354,10 @@ def run_broadcast_cycle(
         for item in intents:
             name = item["agent"]["name"]
             model = item["agent"]["model"]
-            print(f"\n--- {name} ({model}) call status ---")
+            broadcast_model = get_broadcast_model(model)
+            print(f"\n--- {name} ({model} via broadcast {broadcast_model}) call status ---")
             print(json.dumps(item["attempts"], indent=2, ensure_ascii=True))
-            print(f"\n--- {name} ({model}) raw response ---")
+            print(f"\n--- {name} ({model} via broadcast {broadcast_model}) raw response ---")
             print(item["raw"] if item["raw"] else "(empty response after retries)")
             print(f"--- {name} extracted ---")
             print(json.dumps(item["extracted"], indent=2, ensure_ascii=True))
@@ -538,6 +546,7 @@ def main():
             for i in h.get("intents", []):
                 intents_out.append({
                     "agent": i["agent"],
+                    "broadcast_model": i.get("broadcast_model"),
                     "attempts": i.get("attempts", []),
                     "raw": i.get("raw", ""),
                     "extracted": i.get("extracted", {}),

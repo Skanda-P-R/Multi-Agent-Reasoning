@@ -1,3 +1,4 @@
+import re
 import time
 from copy import deepcopy
 from collections import deque
@@ -11,6 +12,10 @@ from dpr_constants import (
     HUMAN_NAME,
     LOOP_WINDOW,
     MAX_REPEAT_STREAK,
+    MIN_COMPLETION_ACCEPTED_TURNS,
+    MIN_COMPLETION_AGENT_COVERAGE_RATIO,
+    MIN_COMPLETION_MEMORY_ITEMS,
+    MIN_COMPLETION_POINTERS_ADDRESSED,
     MAX_TURNS,
     REDIRECT_DURATION_TURNS,
     SECTION_HEADERS,
@@ -319,6 +324,56 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
         idx = self._agent_index(agent_name)
         return (idx - self.current_index) % len(self.agents)
 
+    def _completion_readiness(self, current_pointer=""):
+        accepted_agent_turns = [
+            r for r in self.responses
+            if r.get("accepted") and r.get("agent") not in {HUMAN_NAME, "System"}
+        ]
+        agents_who_spoke = {r.get("agent") for r in accepted_agent_turns}
+        agent_count = max(1, len(self.agents))
+        coverage_ratio = len(agents_who_spoke) / agent_count
+        memory_items = sum(
+            len(self.shared_memory.get(key, []))
+            for key in ["facts", "options", "decisions", "open_questions", "actions"]
+        )
+        pending_pointer_count = len([
+            item for item in self.intent_queue
+            if isinstance(item, dict) and item.get("agent") != HUMAN_NAME and item.get("pointer")
+        ])
+
+        blockers = []
+        if len(accepted_agent_turns) < MIN_COMPLETION_ACCEPTED_TURNS:
+            blockers.append(
+                f"accepted agent turns {len(accepted_agent_turns)}/{MIN_COMPLETION_ACCEPTED_TURNS}"
+            )
+        if memory_items < MIN_COMPLETION_MEMORY_ITEMS:
+            blockers.append(f"shared memory items {memory_items}/{MIN_COMPLETION_MEMORY_ITEMS}")
+        if len(self.pointer_history) < MIN_COMPLETION_POINTERS_ADDRESSED:
+            blockers.append(
+                f"addressed pointers {len(self.pointer_history)}/{MIN_COMPLETION_POINTERS_ADDRESSED}"
+            )
+        if coverage_ratio < MIN_COMPLETION_AGENT_COVERAGE_RATIO:
+            blockers.append(
+                f"agent coverage {coverage_ratio:.0%}/{MIN_COMPLETION_AGENT_COVERAGE_RATIO:.0%}"
+            )
+        if current_pointer:
+            blockers.append("current turn still has an active pointer")
+        if pending_pointer_count:
+            blockers.append(f"pending broadcast pointers {pending_pointer_count}")
+
+        return {
+            "ready": not blockers,
+            "blockers": blockers,
+            "accepted_agent_turns": len(accepted_agent_turns),
+            "memory_items": memory_items,
+            "pointers_addressed": len(self.pointer_history),
+            "agent_coverage_ratio": coverage_ratio,
+            "pending_pointer_count": pending_pointer_count,
+        }
+
+    def _strip_final_design_marker(self, text):
+        return re.sub(r"\bFINAL\s+DESIGN\s+COMPLETE\b", "", text or "", flags=re.IGNORECASE).strip()
+
     def _push_facilitator_event(self, kind, message):
         self.facilitator_log.append({
             "turn": self.turn,
@@ -549,6 +604,29 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             )
 
         final_design_complete = "FINAL DESIGN COMPLETE" in answer.upper()
+        completion_readiness = None
+        if final_design_complete:
+            if ignored_reason:
+                answer = self._strip_final_design_marker(answer)
+                final_design_complete = False
+                self._push_facilitator_event(
+                    "completion_deferred",
+                    f"Completion marker ignored because the turn was rejected: {ignored_reason}.",
+                )
+            else:
+                completion_readiness = self._completion_readiness(current_pointer=pointer_text)
+            if final_design_complete and not completion_readiness["ready"]:
+                stripped_answer = self._strip_final_design_marker(answer)
+                if stripped_answer:
+                    answer = stripped_answer
+                else:
+                    ignored_reason = ignored_reason or "premature_completion_marker"
+                final_design_complete = False
+                self._push_facilitator_event(
+                    "completion_deferred",
+                    "Premature completion marker deferred: "
+                    + "; ".join(completion_readiness["blockers"]),
+                )
 
         entry = {
             "agent": agent_name,
@@ -562,6 +640,7 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
             "intent_priority_rank": intent_priority_rank,
             "intent_confidence": intent_confidence,
             "intent_hand_raise": intent_hand_raise,
+            "completion_readiness": completion_readiness,
         }
 
         self.responses.append(entry)
@@ -583,42 +662,31 @@ class DPRSession(DPRMemoryMixin, DPRIntentMixin):
                 self.bootstrap_done = True
 
         if final_design_complete:
-            # Per DPR principles: Only allow completion when ALL agents have participated
-            agents_who_spoke = set(self.last_spoke.keys()) - {0} if 0 in self.last_spoke else set(self.last_spoke.keys())
-            agents_not_spoken = [a["name"] for a in self.agents if self.last_spoke.get(a["name"], 0) == 0]
-            
-            if agents_not_spoken:
-                # Don't complete yet - other agents need to contribute
-                self._push_facilitator_event(
-                    "completion_deferred",
-                    f"Completion proposed but deferred: Agents {', '.join(agents_not_spoken)} haven't participated yet. Continuing for iterative refinement as per DPR protocol."
-                )
-            else:
-                # All agents have participated - allow completion
-                self.awaiting_human_finalization = True
-                self.finalization_candidate = {
-                    "agent": agent_name,
-                    "model": model,
-                    "text": answer,
-                }
-                return {
-                    "status": "awaiting_human_finalization",
-                    "agent": HUMAN_NAME,
-                    "agent_model": None,
-                    "text": "Completion candidate raised. Human approval required.",
-                    "round": self.turn,
-                    "finalization_candidate": self.finalization_candidate,
-                    "ignored": bool(ignored_reason),
-                    "ignored_reason": ignored_reason,
-                    "quota_left": self.quotas.get(agent_name),
-                    "queued_interrupts": list(self.hand_queue),
-                    "intent_pointer": pointer_text,
-                    "intent_priority": intent_priority,
-                    "intent_priority_rank": intent_priority_rank,
-                    "intent_confidence": intent_confidence,
-                    "intent_hand_raise": intent_hand_raise,
-                    **self._state_payload(),
-                }
+            self.awaiting_human_finalization = True
+            self.finalization_candidate = {
+                "agent": agent_name,
+                "model": model,
+                "text": answer,
+                "completion_readiness": completion_readiness,
+            }
+            return {
+                "status": "awaiting_human_finalization",
+                "agent": HUMAN_NAME,
+                "agent_model": None,
+                "text": "Completion candidate raised. Human approval required.",
+                "round": self.turn,
+                "finalization_candidate": self.finalization_candidate,
+                "ignored": bool(ignored_reason),
+                "ignored_reason": ignored_reason,
+                "quota_left": self.quotas.get(agent_name),
+                "queued_interrupts": list(self.hand_queue),
+                "intent_pointer": pointer_text,
+                "intent_priority": intent_priority,
+                "intent_priority_rank": intent_priority_rank,
+                "intent_confidence": intent_confidence,
+                "intent_hand_raise": intent_hand_raise,
+                **self._state_payload(),
+            }
 
         self.quotas[agent_name] -= 1
         self.last_spoke[agent_name] = self.turn

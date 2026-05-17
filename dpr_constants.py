@@ -5,19 +5,36 @@ from dotenv import load_dotenv
 # --------------------------------------------
 # ENVIRONMENT / API CONFIG
 # --------------------------------------------
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPEN_ROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
-AVAILABLE_MODELS = [
+GROQ_AVAILABLE_MODELS = [
     "llama-3.1-8b-instant",
     "llama-3.3-70b-versatile",
-    "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
-    "groq/compound-mini",
-    "openai/gpt-oss-safeguard-20b",
+    "openai/gpt-oss-120b",
 ]
+
+OPEN_ROUTER_AVAILABLE_MODELS = [
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free",
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+]
+
+# User-facing/session models remain Groq model IDs because live turns are
+# answered through Groq. Broadcast intent collection can use equivalent
+# OpenRouter models to reduce Groq rate-limit pressure.
+AVAILABLE_MODELS = list(GROQ_AVAILABLE_MODELS)
+BROADCAST_MODEL_MAP = {
+    "llama-3.1-8b-instant": "nvidia/nemotron-nano-9b-v2:free",
+    "llama-3.3-70b-versatile": "nvidia/nemotron-nano-12b-v2-vl:free",
+    "openai/gpt-oss-20b": "openai/gpt-oss-20b:free",
+    "openai/gpt-oss-120b": "openai/gpt-oss-120b:free",
+}
 
 # --------------------------------------------
 # DEFAULT PANEL CONFIG
@@ -33,6 +50,12 @@ SECTION_HEADERS = {
     "education": "You are answering with an education-focused perspective (clarity, pedagogy, learning outcomes).",
     "programming": "You are answering with a programming-focused perspective (implementation, architecture, code quality).",
     "research": "You are answering with a research/analysis perspective (evidence, tradeoffs, rigor).",
+    "product": "You are answering with a product-focused perspective (user needs, scope, prioritization, adoption).",
+    "design": "You are answering with a design/UX perspective (usability, flows, accessibility, interaction quality).",
+    "business": "You are answering with a business/strategy perspective (market fit, cost, revenue, positioning).",
+    "operations": "You are answering with an operations-focused perspective (process, deployment, reliability, ownership).",
+    "security": "You are answering with a security/privacy perspective (threats, data protection, abuse prevention).",
+    "ethics": "You are answering with an ethics/policy perspective (fairness, harms, governance, accountability).",
 }
 DEFAULT_SECTION = "general"
 
@@ -51,7 +74,11 @@ HUMAN_NAME = "Human"
 # --------------------------------------------
 # MEMORY / BROADCAST TUNING
 # --------------------------------------------
-MEMORY_MODEL = "groq/compound"
+MEMORY_MODEL = "openai/gpt-oss-safeguard-20b"  # Groq model used for summarising.
+SELECTOR_MODEL = "openrouter/free"  # OpenRouter model used for panel routing.
+SELECTOR_PROVIDER = "openrouter"
+SELECTOR_MAX_PANEL_SIZE = 16
+SELECTOR_MODELS_PER_SECTION = 4
 MEMORY_SECTION_LIMIT = 12
 MEMORY_CHANGELOG_LIMIT = 20
 RECENT_TURNS_IN_CONTEXT = 2
@@ -62,6 +89,10 @@ TURN_CALL_DELAY_SECONDS = 0.5
 MEMORY_ITEM_CHAR_LIMIT = 170
 MEMORY_SIMILARITY_THRESHOLD = 0.86
 MIN_PERSISTENT_OPEN_QUESTIONS = 2
+MIN_COMPLETION_ACCEPTED_TURNS = 10
+MIN_COMPLETION_MEMORY_ITEMS = 18
+MIN_COMPLETION_POINTERS_ADDRESSED = 6
+MIN_COMPLETION_AGENT_COVERAGE_RATIO = 0.80
 
 # --------------------------------------------
 # MEMORY PRIORITY HINTS

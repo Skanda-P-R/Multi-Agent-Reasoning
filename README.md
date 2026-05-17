@@ -60,7 +60,7 @@ The UI supports live session control, human intervention actions, and per-turn p
 
 - Supports user-provided model panel selection at session start.
 - Validates model compatibility against `AVAILABLE_MODELS`.
-- Supports section assignment per agent (`general`, `programming`, `education`, `research`).
+- Supports section assignment per agent (`general`, `education`, `programming`, `research`, `product`, `design`, `business`, `operations`, `security`, `ethics`).
 
 ### 2. Broadcast-Driven Turn Arbitration
 
@@ -166,9 +166,10 @@ Step payloads expose protocol internals for UI/debugging, including:
 
 ## Configuration
 
-Environment variable:
+Environment variables:
 
-- `GROQ_API_KEY` - required for model API calls
+- `GROQ_API_KEY` - required for live agent turns, memory summaries, and model selection
+- `OPEN_ROUTER_API_KEY` - required for broadcast/hand-raise intent calls and OpenRouter selector calls
 
 Setup:
 
@@ -177,7 +178,16 @@ Setup:
 
 ```env
 GROQ_API_KEY=gsk_your_actual_key_here
+OPEN_ROUTER_API_KEY=sk-or-v1-your_actual_key_here
 ```
+
+Model routing:
+
+- Live session answers use Groq model IDs from `GROQ_AVAILABLE_MODELS`.
+- Broadcast intent collection uses OpenRouter equivalents from `BROADCAST_MODEL_MAP`.
+- The OpenRouter `meta-llama/llama-3.2-3b-instruct:free` broadcast model maps back to the live Groq `llama-3.1-8b-instant` agent.
+- Memory summarization uses Groq `openai/gpt-oss-safeguard-20b`.
+- Model/section selection uses `SELECTOR_MODEL` through `SELECTOR_PROVIDER`.
 
 ---
 
@@ -232,8 +242,13 @@ Default panel (`DEFAULT_AGENT_MODELS`):
 Current available catalog (`AVAILABLE_MODELS`) also includes:
 
 - `llama-3.1-8b-instant`
-- `groq/compound-mini`
-- `openai/gpt-oss-safeguard-20b`
+
+Broadcast-only OpenRouter equivalents:
+
+- `llama-3.3-70b-versatile` -> `meta-llama/llama-3.3-70b-instruct:free`
+- `llama-3.1-8b-instant` -> `meta-llama/llama-3.2-3b-instruct:free`
+- `openai/gpt-oss-120b` -> `openai/gpt-oss-120b:free`
+- `openai/gpt-oss-20b` -> `openai/gpt-oss-20b:free`
 
 ---
 

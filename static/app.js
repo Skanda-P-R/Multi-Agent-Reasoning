@@ -176,6 +176,11 @@ function addSystem(text) {
     addMessage("system", text)
 }
 
+function shouldRenderTranscriptTurn(data) {
+    if (!data || data.ignored) return false
+    return Boolean((data.text || "").trim())
+}
+
 function setSessionStatus(text, level = "info", durationMs = 4000) {
     if (!sessionStatusBadge) return
     if (sessionStatusTimer) {
@@ -700,6 +705,7 @@ function buildTurnDetailsFromResponse(response) {
 }
 
 function renderRestoredResponse(response) {
+    if (response.accepted === false) return
     const agent = response.agent || "System"
     if (agent === "Human") {
         addMessage("human", response.text || "")
@@ -845,7 +851,16 @@ function resetSuggestionState() {
 function renderSuggestionPanel(suggestion) {
     const items = Array.isArray(suggestion.models) ? suggestion.models : []
     const list = items.map((m) => `- ${m.model} (${m.section || defaultSection})`).join("\n")
+    const meta = suggestion._selector_meta || {}
+    const selectorLine = meta.source
+        ? `Selector: ${meta.source}${meta.reason ? ` (${meta.reason})` : ""}\n`
+        : ""
+    const rawPreview = meta.source && meta.source !== "llm" && meta.raw_output
+        ? `Raw selector preview: ${String(meta.raw_output).replace(/\s+/g, " ").slice(0, 300)}\n`
+        : ""
     suggestionText.textContent =
+        selectorLine +
+        rawPreview +
         `Suggested section: ${suggestion.section || defaultSection}\n` +
         `Panel size: ${items.length}\n\n${list}`
     suggestionBox.classList.remove("hidden")
@@ -1136,16 +1151,18 @@ async function loop() {
         return
     }
 
-    const agentClass = data.agent.replace(" ", "").toLowerCase()
+    if (shouldRenderTranscriptTurn(data)) {
+        const agentClass = data.agent.replace(" ", "").toLowerCase()
 
-    addMessage(
-        agentClass,
-        `${formatAgentHeading(data.agent, data.agent_model)}\n\n${data.text}`,
-        {
-            bubbleBackground: getAgentBubble(data.agent),
-            turnDetails: buildTurnDetails(data),
-        }
-    )
+        addMessage(
+            agentClass,
+            `${formatAgentHeading(data.agent, data.agent_model)}\n\n${data.text}`,
+            {
+                bubbleBackground: getAgentBubble(data.agent),
+                turnDetails: buildTurnDetails(data),
+            }
+        )
+    }
 
     showLoading("Preparing next turn...")
     setTimeout(loop, STEP_DELAY_MS)
